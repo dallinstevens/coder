@@ -6728,6 +6728,10 @@ func TestComputerUseSubagentToolsAndModel(t *testing.T) {
 	db, ps := dbtestutil.NewDB(t)
 	ctx := testutil.Context(t, testutil.WaitLong)
 
+	computerUseModelProvider, computerUseModelName, ok := chattool.DefaultComputerUseModel(chattool.ComputerUseProviderAnthropic)
+	require.True(t, ok)
+	require.Equal(t, chattool.ComputerUseProviderAnthropic, computerUseModelProvider)
+
 	// Track tools and model from the Anthropic LLM calls (the
 	// computer use child chat). We use a raw HTTP handler because
 	// the chattest AnthropicRequest struct does not capture tools.
@@ -6775,7 +6779,7 @@ func TestComputerUseSubagentToolsAndModel(t *testing.T) {
 					"id":          "msg-test",
 					"type":        "message",
 					"role":        "assistant",
-					"model":       chattool.ComputerUseModelName,
+					"model":       computerUseModelName,
 					"content":     []map[string]any{{"type": "text", "text": "Done."}},
 					"stop_reason": "end_turn",
 					"usage":       map[string]any{"input_tokens": 10, "output_tokens": 5},
@@ -6795,7 +6799,7 @@ func TestComputerUseSubagentToolsAndModel(t *testing.T) {
 						"id":    "msg-test",
 						"type":  "message",
 						"role":  "assistant",
-						"model": chattool.ComputerUseModelName,
+						"model": computerUseModelName,
 					},
 				},
 				{
@@ -6960,9 +6964,9 @@ func TestComputerUseSubagentToolsAndModel(t *testing.T) {
 	childTools := calls[0].Tools
 
 	// 1. Verify the model is the computer use model.
-	require.Equal(t, chattool.ComputerUseModelName, childModel,
+	require.Equal(t, computerUseModelName, childModel,
 		"computer use subagent should use %s",
-		chattool.ComputerUseModelName)
+		computerUseModelName)
 
 	// 2. Verify the computer tool is present.
 	require.Contains(t, childTools, "computer",
