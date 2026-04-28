@@ -414,6 +414,69 @@ func TestDynamicParametersWithTerraformValues(t *testing.T) {
 		}}, preview.SecretRequirements)
 	})
 
+	t.Run("SecretRequirementPushesOnSecretChange", func(t *testing.T) {
+		t.Parallel()
+
+		dynamicParametersTerraformSource, err := os.ReadFile("testdata/parameters/secret_required/main.tf")
+		require.NoError(t, err)
+
+		setup := setupDynamicParamsTest(t, setupDynamicParamsTestParams{
+			provisionerDaemonVersion: provProto.CurrentVersion.String(),
+			mainTF:                   dynamicParametersTerraformSource,
+		})
+
+		ctx := testutil.Context(t, testutil.WaitMedium)
+		previews := setup.stream.Chan()
+
+		preview := testutil.RequireReceive(ctx, t, previews)
+		require.Equal(t, -1, preview.ID)
+		require.Len(t, preview.SecretRequirements, 1)
+		require.False(t, preview.SecretRequirements[0].Satisfied)
+
+		_, err = setup.dynamicParamsClient.CreateUserSecret(ctx, codersdk.Me, codersdk.CreateUserSecretRequest{
+			Name:    "github-token",
+			Value:   "ghp_test",
+			EnvName: "GITHUB_TOKEN",
+		})
+		require.NoError(t, err)
+
+		preview = testutil.RequireReceive(ctx, t, previews)
+		require.Equal(t, 0, preview.ID)
+		require.Len(t, preview.SecretRequirements, 1)
+		require.True(t, preview.SecretRequirements[0].Satisfied)
+
+		err = setup.dynamicParamsClient.DeleteUserSecret(ctx, codersdk.Me, "github-token")
+		require.NoError(t, err)
+
+		preview = testutil.RequireReceive(ctx, t, previews)
+		require.Equal(t, 1, preview.ID)
+		require.Len(t, preview.SecretRequirements, 1)
+		require.False(t, preview.SecretRequirements[0].Satisfied)
+
+		_, err = setup.dynamicParamsClient.CreateUserSecret(ctx, codersdk.Me, codersdk.CreateUserSecretRequest{
+			Name:    "github-token",
+			Value:   "ghp_test",
+			EnvName: "GITHUB_TOKEN",
+		})
+		require.NoError(t, err)
+
+		preview = testutil.RequireReceive(ctx, t, previews)
+		require.Equal(t, 2, preview.ID)
+		require.Len(t, preview.SecretRequirements, 1)
+		require.True(t, preview.SecretRequirements[0].Satisfied)
+
+		otherEnvName := "OTHER_GITHUB_TOKEN"
+		_, err = setup.dynamicParamsClient.UpdateUserSecret(ctx, codersdk.Me, "github-token", codersdk.UpdateUserSecretRequest{
+			EnvName: &otherEnvName,
+		})
+		require.NoError(t, err)
+
+		preview = testutil.RequireReceive(ctx, t, previews)
+		require.Equal(t, 3, preview.ID)
+		require.Len(t, preview.SecretRequirements, 1)
+		require.False(t, preview.SecretRequirements[0].Satisfied)
+	})
+
 	// Regression test for PLAT-100: a workspace whose template has an
 	// unsatisfied coder_secret requirement must still be stoppable and
 	// deletable. Start remains blocked.
@@ -486,10 +549,11 @@ type setupDynamicParamsTestParams struct {
 }
 
 type dynamicParamsTest struct {
-	client   *codersdk.Client
-	api      *coderd.API
-	stream   *wsjson.Stream[codersdk.DynamicParametersResponse, codersdk.DynamicParametersRequest]
-	template codersdk.Template
+	client              *codersdk.Client
+	dynamicParamsClient *codersdk.Client
+	api                 *coderd.API
+	stream              *wsjson.Stream[codersdk.DynamicParametersResponse, codersdk.DynamicParametersRequest]
+	template            codersdk.Template
 }
 
 func setupDynamicParamsTest(t *testing.T, args setupDynamicParamsTestParams) dynamicParamsTest {
@@ -530,10 +594,11 @@ func setupDynamicParamsTest(t *testing.T, args setupDynamicParamsTestParams) dyn
 	})
 
 	return dynamicParamsTest{
-		client:   ownerClient,
-		api:      api,
-		stream:   stream,
-		template: tpl,
+		client:              ownerClient,
+		dynamicParamsClient: templateAdmin,
+		api:                 api,
+		stream:              stream,
+		template:            tpl,
 	}
 }
 
