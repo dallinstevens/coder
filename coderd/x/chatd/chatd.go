@@ -7077,7 +7077,7 @@ func (p *Server) runChat(
 			isComputerUse:     isComputerUse,
 			getWorkspaceConn:  workspaceCtx.getWorkspaceConn,
 			storeFile:         storeChatAttachment,
-			clock:             quartz.NewReal(),
+			clock:             p.clock,
 			logger:            p.logger.Named("computer_use"),
 		},
 	)
