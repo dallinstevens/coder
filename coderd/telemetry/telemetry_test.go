@@ -2062,8 +2062,6 @@ func TestUserSecretsTelemetry(t *testing.T) {
 		assert.Equal(t, int64(2), snap.UserSecretsSummary.SecretsPerUserP50)
 		assert.Equal(t, int64(2), snap.UserSecretsSummary.SecretsPerUserP75)
 		assert.Equal(t, int64(2), snap.UserSecretsSummary.SecretsPerUserP90)
-		assert.Equal(t, int64(2), snap.UserSecretsSummary.SecretsPerUserP95)
-		assert.Equal(t, int64(2), snap.UserSecretsSummary.SecretsPerUserP99)
 	})
 
 	t.Run("PercentileDistribution", func(t *testing.T) {
@@ -2078,8 +2076,6 @@ func TestUserSecretsTelemetry(t *testing.T) {
 		//   p50 -> index 2 -> 4
 		//   p75 -> index 3 -> 8
 		//   p90 -> index 4 -> 16
-		//   p95 -> index 4 -> 16
-		//   p99 -> index 4 -> 16
 		distribution := []int{1, 2, 4, 8, 16}
 		for _, n := range distribution {
 			u := dbgen.User(t, db, database.User{})
@@ -2107,7 +2103,5 @@ func TestUserSecretsTelemetry(t *testing.T) {
 		assert.Equal(t, int64(4), snap.UserSecretsSummary.SecretsPerUserP50)
 		assert.Equal(t, int64(8), snap.UserSecretsSummary.SecretsPerUserP75)
 		assert.Equal(t, int64(16), snap.UserSecretsSummary.SecretsPerUserP90)
-		assert.Equal(t, int64(16), snap.UserSecretsSummary.SecretsPerUserP95)
-		assert.Equal(t, int64(16), snap.UserSecretsSummary.SecretsPerUserP99)
 	})
 }

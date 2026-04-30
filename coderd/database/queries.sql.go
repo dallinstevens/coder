@@ -24753,9 +24753,7 @@ SELECT
     COALESCE((SELECT percentile_disc(0.25) WITHIN GROUP (ORDER BY n) FROM per_user), 0)::bigint         AS secrets_per_user_p25,
     COALESCE((SELECT percentile_disc(0.50) WITHIN GROUP (ORDER BY n) FROM per_user), 0)::bigint         AS secrets_per_user_p50,
     COALESCE((SELECT percentile_disc(0.75) WITHIN GROUP (ORDER BY n) FROM per_user), 0)::bigint         AS secrets_per_user_p75,
-    COALESCE((SELECT percentile_disc(0.90) WITHIN GROUP (ORDER BY n) FROM per_user), 0)::bigint         AS secrets_per_user_p90,
-    COALESCE((SELECT percentile_disc(0.95) WITHIN GROUP (ORDER BY n) FROM per_user), 0)::bigint         AS secrets_per_user_p95,
-    COALESCE((SELECT percentile_disc(0.99) WITHIN GROUP (ORDER BY n) FROM per_user), 0)::bigint         AS secrets_per_user_p99
+    COALESCE((SELECT percentile_disc(0.90) WITHIN GROUP (ORDER BY n) FROM per_user), 0)::bigint         AS secrets_per_user_p90
 FROM user_secrets
 `
 
@@ -24771,8 +24769,6 @@ type GetUserSecretsTelemetrySummaryRow struct {
 	SecretsPerUserP50 int64 `db:"secrets_per_user_p50" json:"secrets_per_user_p50"`
 	SecretsPerUserP75 int64 `db:"secrets_per_user_p75" json:"secrets_per_user_p75"`
 	SecretsPerUserP90 int64 `db:"secrets_per_user_p90" json:"secrets_per_user_p90"`
-	SecretsPerUserP95 int64 `db:"secrets_per_user_p95" json:"secrets_per_user_p95"`
-	SecretsPerUserP99 int64 `db:"secrets_per_user_p99" json:"secrets_per_user_p99"`
 }
 
 // Returns deployment-wide aggregates for the telemetry snapshot.
@@ -24796,8 +24792,6 @@ func (q *sqlQuerier) GetUserSecretsTelemetrySummary(ctx context.Context) (GetUse
 		&i.SecretsPerUserP50,
 		&i.SecretsPerUserP75,
 		&i.SecretsPerUserP90,
-		&i.SecretsPerUserP95,
-		&i.SecretsPerUserP99,
 	)
 	return i, err
 }

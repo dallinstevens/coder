@@ -839,8 +839,6 @@ func (r *remoteReporter) createSnapshot() (*Snapshot, error) {
 			SecretsPerUserP50: row.SecretsPerUserP50,
 			SecretsPerUserP75: row.SecretsPerUserP75,
 			SecretsPerUserP90: row.SecretsPerUserP90,
-			SecretsPerUserP95: row.SecretsPerUserP95,
-			SecretsPerUserP99: row.SecretsPerUserP99,
 		}
 		return nil
 	})
@@ -2438,7 +2436,7 @@ type ChatDiffStatusSummary struct {
 // down by which injection fields are populated. The SecretsPerUser*
 // fields describe the distribution of how many secrets each user
 // with at least one secret has stored, with Max and Px being the
-// 25th, 50th, 75th, 90th, 95th, and 99th percentiles.
+// 25th, 50th, 75th, and 90th percentiles.
 type UserSecretsSummary struct {
 	UsersWithSecrets  int64 `json:"users_with_secrets"`
 	TotalSecrets      int64 `json:"total_secrets"`
@@ -2451,8 +2449,6 @@ type UserSecretsSummary struct {
 	SecretsPerUserP50 int64 `json:"secrets_per_user_p50"`
 	SecretsPerUserP75 int64 `json:"secrets_per_user_p75"`
 	SecretsPerUserP90 int64 `json:"secrets_per_user_p90"`
-	SecretsPerUserP95 int64 `json:"secrets_per_user_p95"`
-	SecretsPerUserP99 int64 `json:"secrets_per_user_p99"`
 }
 
 func ConvertAIBridgeInterceptionsSummary(endTime time.Time, provider, model, client string, summary database.CalculateAIBridgeInterceptionsTelemetrySummaryRow) AIBridgeInterceptionsSummary {

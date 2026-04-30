@@ -89,7 +89,5 @@ SELECT
     COALESCE((SELECT percentile_disc(0.25) WITHIN GROUP (ORDER BY n) FROM per_user), 0)::bigint         AS secrets_per_user_p25,
     COALESCE((SELECT percentile_disc(0.50) WITHIN GROUP (ORDER BY n) FROM per_user), 0)::bigint         AS secrets_per_user_p50,
     COALESCE((SELECT percentile_disc(0.75) WITHIN GROUP (ORDER BY n) FROM per_user), 0)::bigint         AS secrets_per_user_p75,
-    COALESCE((SELECT percentile_disc(0.90) WITHIN GROUP (ORDER BY n) FROM per_user), 0)::bigint         AS secrets_per_user_p90,
-    COALESCE((SELECT percentile_disc(0.95) WITHIN GROUP (ORDER BY n) FROM per_user), 0)::bigint         AS secrets_per_user_p95,
-    COALESCE((SELECT percentile_disc(0.99) WITHIN GROUP (ORDER BY n) FROM per_user), 0)::bigint         AS secrets_per_user_p99
+    COALESCE((SELECT percentile_disc(0.90) WITHIN GROUP (ORDER BY n) FROM per_user), 0)::bigint         AS secrets_per_user_p90
 FROM user_secrets;
