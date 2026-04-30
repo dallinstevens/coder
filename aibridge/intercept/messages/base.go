@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -26,6 +27,7 @@ import (
 	aibcontext "github.com/coder/coder/v2/aibridge/context"
 	"github.com/coder/coder/v2/aibridge/intercept"
 	"github.com/coder/coder/v2/aibridge/intercept/apidump"
+	"github.com/coder/coder/v2/aibridge/keypool"
 	"github.com/coder/coder/v2/aibridge/mcp"
 	"github.com/coder/coder/v2/aibridge/recorder"
 	"github.com/coder/coder/v2/aibridge/tracing"
@@ -203,18 +205,23 @@ func (i *interceptionBase) isSmallFastModel() bool {
 }
 
 func (i *interceptionBase) newMessagesService(ctx context.Context, opts ...option.RequestOption) (anthropic.MessageService, error) {
-	// BYOK with access token uses Authorization: Bearer.
-	// Otherwise use X-Api-Key (centralized or BYOK with personal API key).
-	if i.cfg.BYOKBearerToken != "" {
-		i.logger.Debug(ctx, "using byok access token auth",
-			slog.F("bearer_hint", utils.MaskSecret(i.cfg.BYOKBearerToken)),
-		)
-		opts = append(opts, option.WithAuthToken(i.cfg.BYOKBearerToken))
-	} else {
-		i.logger.Debug(ctx, "using api key auth",
-			slog.F("api_key_hint", utils.MaskSecret(i.cfg.Key)),
-		)
-		opts = append(opts, option.WithAPIKey(i.cfg.Key))
+	// BYOK paths set auth for the single attempt. Centralized
+	// requests skip this because the failover loop sets auth
+	// per attempt.
+	if i.cfg.KeyPool == nil {
+		if i.cfg.BYOKBearerToken != "" {
+			// BYOK Bearer: Authorization header.
+			i.logger.Debug(ctx, "using byok access token auth",
+				slog.F("bearer_hint", utils.MaskSecret(i.cfg.BYOKBearerToken)),
+			)
+			opts = append(opts, option.WithAuthToken(i.cfg.BYOKBearerToken))
+		} else {
+			// BYOK X-Api-Key.
+			i.logger.Debug(ctx, "using api key auth",
+				slog.F("api_key_hint", utils.MaskSecret(i.cfg.Key)),
+			)
+			opts = append(opts, option.WithAPIKey(i.cfg.Key))
+		}
 	}
 	opts = append(opts, option.WithBaseURL(i.cfg.BaseURL))
 
@@ -427,6 +434,11 @@ func (i *interceptionBase) writeUpstreamError(w http.ResponseWriter, antErr *res
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	// Surface the cooldown duration to the client when set
+	// (e.g. transient key-pool exhaustion).
+	if antErr.RetryAfter > 0 {
+		w.Header().Set("Retry-After", strconv.Itoa(int(antErr.RetryAfter.Seconds())))
+	}
 	w.WriteHeader(antErr.StatusCode)
 
 	out, err := json.Marshal(antErr)
@@ -503,6 +515,62 @@ func accumulateUsage(dest, src any) {
 	}
 }
 
+// For centralized requests, markKeyOnError extracts an
+// Anthropic SDK error from err and marks the key based on
+// its status code. Returns true if the status was a key-specific
+// failover trigger so callers can retry with the next key.
+func (i *interceptionBase) markKeyOnError(ctx context.Context, key *keypool.Key, err error) bool {
+	if i.cfg.KeyPool == nil {
+		return false
+	}
+	var apiErr *anthropic.Error
+	if !errors.As(err, &apiErr) {
+		return false
+	}
+	return intercept.MarkKeyOnStatus(
+		ctx, key, apiErr.StatusCode, apiErr.Response,
+		i.logger, i.providerName,
+	)
+}
+
+// For centralized requests, mapExhaustionError translates a
+// keypool exhaustion error into a developer-facing responseError
+// shaped for the Anthropic API. Returns nil if err is not an
+// exhaustion error.
+func (i *interceptionBase) mapExhaustionError(err error) *responseError {
+	if i.cfg.KeyPool == nil {
+		return nil
+	}
+	var transient *keypool.TransientExhaustionError
+	switch {
+	case errors.As(err, &transient):
+		return &responseError{
+			ErrorResponse: &anthropic.ErrorResponse{
+				Error: anthropic.ErrorObjectUnion{
+					Message: "all configured keys are rate-limited",
+					Type:    "rate_limit_error",
+				},
+				Type: constant.ValueOf[constant.Error](),
+			},
+			StatusCode: http.StatusTooManyRequests,
+			RetryAfter: transient.RetryAfter,
+		}
+	case errors.Is(err, keypool.ErrPermanentExhaustion):
+		return &responseError{
+			ErrorResponse: &anthropic.ErrorResponse{
+				Error: anthropic.ErrorObjectUnion{
+					Message: "all configured keys failed authentication",
+					Type:    "api_error",
+				},
+				Type: constant.ValueOf[constant.Error](),
+			},
+			StatusCode: http.StatusBadGateway,
+		}
+	default:
+		return nil
+	}
+}
+
 func getErrorResponse(err error) *responseError {
 	var apierr *anthropic.Error
 	if !errors.As(err, &apierr) {
@@ -538,7 +606,8 @@ var _ error = &responseError{}
 type responseError struct {
 	*anthropic.ErrorResponse
 
-	StatusCode int `json:"-"`
+	StatusCode int           `json:"-"`
+	RetryAfter time.Duration `json:"-"`
 }
 
 func newErrorResponse(msg error) *responseError {

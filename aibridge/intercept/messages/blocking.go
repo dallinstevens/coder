@@ -112,6 +112,13 @@ func (i *BlockingInterception) ProcessRequest(w http.ResponseWriter, r *http.Req
 				return xerrors.Errorf("upstream connection closed: %w", err)
 			}
 
+			// Check for key pool exhaustion and return an
+			// appropriate response to the developer.
+			if keyErr := i.mapExhaustionError(err); keyErr != nil {
+				i.writeUpstreamError(w, keyErr)
+				return xerrors.Errorf("key pool exhausted: %w", err)
+			}
+
 			if antErr := getErrorResponse(err); antErr != nil {
 				i.writeUpstreamError(w, antErr)
 				return xerrors.Errorf("anthropic API error: %w", err)
@@ -338,5 +345,45 @@ func (i *BlockingInterception) newMessage(ctx context.Context, svc anthropic.Mes
 	ctx, span := i.tracer.Start(ctx, "Intercept.ProcessRequest.Upstream", trace.WithAttributes(tracing.InterceptionAttributesFromContext(ctx)...))
 	defer tracing.EndSpanErr(span, &outErr)
 
-	return svc.New(ctx, anthropic.MessageNewParams{}, i.withBody())
+	// BYOK or no centralized pool: single attempt, auth set up
+	// in newMessagesService.
+	if i.cfg.KeyPool == nil {
+		return svc.New(ctx, anthropic.MessageNewParams{}, i.withBody())
+	}
+	return i.newMessageWithKeyFailover(ctx, svc)
+}
+
+// newMessageWithKeyFailover walks the centralized key pool,
+// trying each key until one succeeds or the pool is exhausted.
+// Keys are marked temporary on 429 and permanent on 401/403.
+// Errors that aren't key-specific don't trigger failover and
+// are returned to the caller.
+func (i *BlockingInterception) newMessageWithKeyFailover(ctx context.Context, svc anthropic.MessageService) (*anthropic.Message, error) {
+	// TODO(ssncferreira): update the interception's credential
+	// hint with the actually-used key (the successful key on
+	// success, the last tried key on failure) in the upstack PR.
+	walker := i.cfg.KeyPool.Walker()
+	for {
+		key, err := walker.Next()
+		if err != nil {
+			return nil, err
+		}
+
+		msg, err := svc.New(ctx, anthropic.MessageNewParams{},
+			i.withBody(),
+			option.WithAPIKey(key.Value()),
+			// Disable SDK retries because the failover loop
+			// handles retries via key rotation.
+			option.WithMaxRetries(0),
+		)
+		if err == nil {
+			return msg, nil
+		}
+		// Mark the key based on the upstream response.
+		if !i.markKeyOnError(ctx, key, err) {
+			// Not a key-specific failure: return without
+			// trying another key.
+			return nil, err
+		}
+	}
 }

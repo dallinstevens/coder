@@ -13,6 +13,8 @@ import (
 	"github.com/coder/coder/v2/aibridge/config"
 	"github.com/coder/coder/v2/aibridge/intercept"
 	"github.com/coder/coder/v2/aibridge/internal/testutil"
+	"github.com/coder/coder/v2/aibridge/keypool"
+	"github.com/coder/quartz"
 )
 
 func TestAnthropic_TypeAndName(t *testing.T) {
@@ -45,6 +47,58 @@ func TestAnthropic_TypeAndName(t *testing.T) {
 			p := NewAnthropic(tc.cfg, nil)
 			assert.Equal(t, tc.expectType, p.Type())
 			assert.Equal(t, tc.expectName, p.Name())
+		})
+	}
+}
+
+func TestNewAnthropic_KeyResolution(t *testing.T) {
+	t.Parallel()
+
+	pool, err := keypool.New([]string{"pool-key-0", "pool-key-1"}, quartz.NewMock(t))
+	require.NoError(t, err)
+
+	tests := []struct {
+		name           string
+		cfg            config.Anthropic
+		expectedAPIKey string
+	}{
+		{
+			// Legacy single-key path: NewAnthropic builds a
+			// pool containing just that key.
+			name:           "key_creates_keypool",
+			cfg:            config.Anthropic{Key: "legacy-key"},
+			expectedAPIKey: "legacy-key",
+		},
+		{
+			// Caller supplies the pool directly. First key is
+			// used by the single-attempt InjectAuthHeader.
+			name:           "keypool_passed_directly",
+			cfg:            config.Anthropic{KeyPool: pool},
+			expectedAPIKey: "pool-key-0",
+		},
+		{
+			// Both set: KeyPool wins, Key is ignored.
+			name:           "keypool_takes_precedence_over_key",
+			cfg:            config.Anthropic{Key: "legacy-key", KeyPool: pool},
+			expectedAPIKey: "pool-key-0",
+		},
+		{
+			// Neither set: no centralized auth available, so
+			// InjectAuthHeader is a no-op. BYOK auth is set
+			// per-request in CreateInterceptor, not here.
+			name:           "neither_set_no_centralized_auth",
+			cfg:            config.Anthropic{},
+			expectedAPIKey: "",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			p := NewAnthropic(tc.cfg, nil)
+			headers := http.Header{}
+			p.InjectAuthHeader(&headers)
+			assert.Equal(t, tc.expectedAPIKey, headers.Get("X-Api-Key"))
 		})
 	}
 }

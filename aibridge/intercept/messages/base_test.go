@@ -4,17 +4,22 @@ import (
 	"context"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/shared/constant"
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
+	"golang.org/x/xerrors"
 
 	"cdr.dev/slog/v3"
 	"github.com/coder/coder/v2/aibridge/config"
+	"github.com/coder/coder/v2/aibridge/keypool"
 	"github.com/coder/coder/v2/aibridge/mcp"
 	"github.com/coder/coder/v2/aibridge/utils"
+	"github.com/coder/quartz"
 )
 
 func TestScanForCorrelatingToolCallID(t *testing.T) {
@@ -988,6 +993,148 @@ func TestFilterBedrockBetaFlags(t *testing.T) {
 			// Each kept flag should be a separate header value.
 			got := headers.Values("Anthropic-Beta")
 			require.Equal(t, tc.expectValues, got)
+		})
+	}
+}
+
+func TestMapExhaustionError(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name               string
+		nilKeyPool         bool
+		err                error
+		expectedNil        bool
+		expectedStatus     int
+		expectedRetryAfter time.Duration
+	}{
+		{
+			// BYOK or no centralized pool: never maps.
+			name:        "nil_keypool_returns_nil",
+			nilKeyPool:  true,
+			err:         &keypool.TransientExhaustionError{},
+			expectedNil: true,
+		},
+		{
+			// Transient with valid keys present: 429, no Retry-After.
+			name:               "transient_zero_retry_after",
+			err:                &keypool.TransientExhaustionError{},
+			expectedStatus:     http.StatusTooManyRequests,
+			expectedRetryAfter: 0,
+		},
+		{
+			// Transient with cooldown: 429, Retry-After set.
+			name:               "transient_with_retry_after",
+			err:                &keypool.TransientExhaustionError{RetryAfter: 5 * time.Second},
+			expectedStatus:     http.StatusTooManyRequests,
+			expectedRetryAfter: 5 * time.Second,
+		},
+		{
+			// Permanent: 502 api_error.
+			name:           "permanent_returns_502",
+			err:            keypool.ErrPermanentExhaustion,
+			expectedStatus: http.StatusBadGateway,
+		},
+		{
+			// Anything else: not a pool-exhaustion error.
+			name:        "non_pool_exhaustion_error_returns_nil",
+			err:         xerrors.New("some other error"),
+			expectedNil: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			cfg := config.Anthropic{}
+			if !tc.nilKeyPool {
+				pool, err := keypool.New([]string{"key-0"}, quartz.NewMock(t))
+				require.NoError(t, err)
+				cfg.KeyPool = pool
+			}
+			base := &interceptionBase{cfg: cfg}
+
+			got := base.mapExhaustionError(tc.err)
+			if tc.expectedNil {
+				require.Nil(t, got)
+				return
+			}
+			require.NotNil(t, got)
+			assert.Equal(t, tc.expectedStatus, got.StatusCode)
+			assert.Equal(t, tc.expectedRetryAfter, got.RetryAfter)
+		})
+	}
+}
+
+func TestMarkKeyOnError(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		nilKeyPool     bool
+		err            error
+		expectedReturn bool
+		expectedState  keypool.KeyState
+	}{
+		{
+			// BYOK or no centralized pool: never marks.
+			name:           "nil_keypool_returns_false",
+			nilKeyPool:     true,
+			err:            &anthropic.Error{StatusCode: http.StatusTooManyRequests},
+			expectedReturn: false,
+			expectedState:  keypool.KeyStateValid,
+		},
+		{
+			// Non-anthropic error: not a key-specific failure.
+			name:           "non_anthropic_error_returns_false",
+			err:            xerrors.New("network failure"),
+			expectedReturn: false,
+			expectedState:  keypool.KeyStateValid,
+		},
+		{
+			name:           "429_marks_temporary",
+			err:            &anthropic.Error{StatusCode: http.StatusTooManyRequests},
+			expectedReturn: true,
+			expectedState:  keypool.KeyStateTemporary,
+		},
+		{
+			name:           "401_marks_permanent",
+			err:            &anthropic.Error{StatusCode: http.StatusUnauthorized},
+			expectedReturn: true,
+			expectedState:  keypool.KeyStatePermanent,
+		},
+		{
+			name:           "403_marks_permanent",
+			err:            &anthropic.Error{StatusCode: http.StatusForbidden},
+			expectedReturn: true,
+			expectedState:  keypool.KeyStatePermanent,
+		},
+		{
+			// Server errors are not key-specific.
+			name:           "500_does_not_mark",
+			err:            &anthropic.Error{StatusCode: http.StatusInternalServerError},
+			expectedReturn: false,
+			expectedState:  keypool.KeyStateValid,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			pool, err := keypool.New([]string{"key-0"}, quartz.NewMock(t))
+			require.NoError(t, err)
+			key, err := pool.Walker().Next()
+			require.NoError(t, err)
+
+			cfg := config.Anthropic{}
+			if !tc.nilKeyPool {
+				cfg.KeyPool = pool
+			}
+			base := &interceptionBase{cfg: cfg, logger: slog.Make()}
+
+			got := base.markKeyOnError(context.Background(), key, tc.err)
+			assert.Equal(t, tc.expectedReturn, got)
+			assert.Equal(t, tc.expectedState, key.State())
 		})
 	}
 }

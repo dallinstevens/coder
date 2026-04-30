@@ -25,6 +25,7 @@ import (
 	aibcontext "github.com/coder/coder/v2/aibridge/context"
 	"github.com/coder/coder/v2/aibridge/intercept"
 	"github.com/coder/coder/v2/aibridge/intercept/eventstream"
+	"github.com/coder/coder/v2/aibridge/keypool"
 	"github.com/coder/coder/v2/aibridge/mcp"
 	"github.com/coder/coder/v2/aibridge/recorder"
 	"github.com/coder/coder/v2/aibridge/tracing"
@@ -152,6 +153,15 @@ func (i *StreamingInterception) ProcessRequest(w http.ResponseWriter, r *http.Re
 	var lastErr error
 	var interceptionErr error
 
+	// Centralized requests walk the key pool with failover. Each
+	// agentic-loop iteration gets a fresh walker so it can fail
+	// over independently of the initial client request.
+	// BYOK requests run as a single attempt.
+	// TODO(ssncferreira): update the interception's credential
+	// hint with the actually-used key (the successful stream's
+	// key on success, the last tried key on failure) in the
+	// upstack PR.
+
 	isFirst := true
 newStream:
 	for {
@@ -161,14 +171,63 @@ newStream:
 			break
 		}
 
-		stream := i.newStream(streamCtx, svc)
+		// Per-iteration walker: each agentic-loop iteration walks
+		// the pool from the start.
+		var walker *keypool.Walker
+		if i.cfg.KeyPool != nil {
+			walker = i.cfg.KeyPool.Walker()
+		}
+
+		var streamOpts []option.RequestOption
+		var currentKey *keypool.Key
+		if walker != nil {
+			key, err := walker.Next()
+			if err != nil {
+				// Pool exhausted in this iteration. Relay the
+				// error to the client: as an SSE event if events
+				// have already been sent, or by direct write
+				// otherwise.
+				if respErr := i.mapExhaustionError(err); respErr != nil {
+					if events.IsStreaming() {
+						interceptionErr = respErr
+						payload, mErr := i.marshal(respErr)
+						if mErr != nil {
+							logger.Warn(ctx, "failed to marshal exhaustion error", slog.Error(mErr))
+						} else if sErr := events.Send(streamCtx, payload); sErr != nil {
+							logger.Warn(ctx, "failed to relay exhaustion error", slog.Error(sErr))
+						}
+					} else {
+						i.writeUpstreamError(w, respErr)
+					}
+				}
+				break
+			}
+			currentKey = key
+			streamOpts = append(streamOpts,
+				option.WithAPIKey(key.Value()),
+				// Disable SDK retries because the failover
+				// loop handles retries via key rotation.
+				option.WithMaxRetries(0),
+			)
+		}
+
+		stream := i.newStream(streamCtx, svc, streamOpts...)
 
 		var message anthropic.Message
 		var lastToolName string
 
 		pendingToolCalls := make(map[string]string)
 
+		// iterationStarted is per-iteration (reset on every
+		// newStream loop): true once this iteration's upstream
+		// call has delivered any events. While false, a
+		// key-specific failure can still fail over to the next
+		// key. Distinct from events.IsStreaming(), which is
+		// stream-wide and stays true once iteration 1 streams.
+		var iterationStarted bool
+
 		for stream.Next() {
+			iterationStarted = true
 			event := stream.Current()
 			if err := message.Accumulate(event); err != nil {
 				logger.Warn(ctx, "failed to accumulate streaming events", slog.Error(err), slog.F("event", event), slog.F("msg", message.RawJSON()))
@@ -428,6 +487,9 @@ newStream:
 
 					// Causes a new stream to be run with updated messages.
 					isFirst = false
+					// Agentic continuation reuses currentKey,
+					// failover only applies to the initial
+					// client request.
 					continue newStream
 				}
 
@@ -478,40 +540,44 @@ newStream:
 			promptFound = false //nolint:ineffassign // reset to prevent double-recording across newStream iterations
 		}
 
-		if events.IsStreaming() {
-			// Check if the stream encountered any errors.
-			if streamErr := stream.Err(); streamErr != nil {
-				if eventstream.IsUnrecoverableError(streamErr) {
-					logger.Debug(ctx, "stream terminated", slog.Error(streamErr))
-					// We can't reflect an error back if there's a connection error or the request context was canceled.
-				} else if antErr := getErrorResponse(streamErr); antErr != nil {
-					logger.Warn(ctx, "anthropic stream error", slog.Error(streamErr))
-					interceptionErr = antErr
-				} else {
-					logger.Warn(ctx, "unknown stream error", slog.Error(streamErr))
-					// Unfortunately, the Anthropic SDK does not support parsing errors received in the stream
-					// into known types (i.e. [shared.OverloadedError]).
-					// See https://github.com/anthropics/anthropic-sdk-go/blob/v1.12.0/packages/ssestream/ssestream.go#L172-L174
-					// All it does is wrap the payload in an error - which is all we can return, currently.
-					interceptionErr = newErrorResponse(xerrors.Errorf("unknown stream error: %w", streamErr))
-				}
-			} else if lastErr != nil {
-				// Otherwise check if any logical errors occurred during processing.
-				logger.Warn(ctx, "stream processing failed", slog.Error(lastErr))
-				interceptionErr = newErrorResponse(xerrors.Errorf("processing error: %w", lastErr))
-			}
-
-			if interceptionErr != nil {
-				payload, err := i.marshal(interceptionErr)
+		if iterationStarted {
+			// Mid-stream error or logical error: events have
+			// already streamed for this iteration, so the
+			// error is relayed as an SSE event.
+			if respErr := i.mapStreamError(ctx, logger, stream.Err(), lastErr); respErr != nil {
+				interceptionErr = respErr
+				payload, err := i.marshal(respErr)
 				if err != nil {
-					logger.Warn(ctx, "failed to marshal error", slog.Error(err), slog.F("error_payload", fmt.Sprintf("%+v", interceptionErr)))
+					logger.Warn(ctx, "failed to marshal error", slog.Error(err), slog.F("error_payload", fmt.Sprintf("%+v", respErr)))
 				} else if err := events.Send(streamCtx, payload); err != nil {
 					logger.Warn(ctx, "failed to relay error", slog.Error(err), slog.F("payload", payload))
 				}
 			}
 		} else {
-			// Stream has not started yet; write to response if present.
-			i.writeUpstreamError(w, getErrorResponse(stream.Err()))
+			// Pre-stream failure of this iteration. For
+			// centralized requests, mark the key and retry with
+			// the next one (fresh walker on the next iteration).
+			if currentKey != nil && i.markKeyOnError(ctx, currentKey, stream.Err()) {
+				continue newStream
+			}
+			// Non-key error: relay it.
+			respErr := getErrorResponse(stream.Err())
+			if events.IsStreaming() {
+				// Prior iterations have streamed, so the SSE
+				// connection is open: inject as an SSE event.
+				if respErr != nil {
+					interceptionErr = respErr
+					payload, mErr := i.marshal(respErr)
+					if mErr != nil {
+						logger.Warn(ctx, "failed to marshal error", slog.Error(mErr))
+					} else if sErr := events.Send(streamCtx, payload); sErr != nil {
+						logger.Warn(ctx, "failed to relay error", slog.Error(sErr))
+					}
+				}
+			} else {
+				// No events streamed yet; write the response directly.
+				i.writeUpstreamError(w, respErr)
+			}
 		}
 
 		shutdownCtx, shutdownCancel := context.WithTimeout(ctx, time.Second*30)
@@ -532,6 +598,35 @@ newStream:
 	}
 
 	return interceptionErr
+}
+
+// mapStreamError converts a mid-stream upstream error or
+// processing error into a relayable responseError. Returns nil
+// when the error is unrecoverable (e.g. connection broken or
+// context canceled), in which case nothing can be relayed back.
+func (*StreamingInterception) mapStreamError(ctx context.Context, logger slog.Logger, streamErr, lastErr error) *responseError {
+	if streamErr != nil {
+		if eventstream.IsUnrecoverableError(streamErr) {
+			logger.Debug(ctx, "stream terminated", slog.Error(streamErr))
+			// We can't reflect an error back if there's a connection error or the request context was canceled.
+			return nil
+		}
+		if antErr := getErrorResponse(streamErr); antErr != nil {
+			logger.Warn(ctx, "anthropic stream error", slog.Error(streamErr))
+			return antErr
+		}
+		logger.Warn(ctx, "unknown stream error", slog.Error(streamErr))
+		// Unfortunately, the Anthropic SDK does not support parsing errors received in the stream
+		// into known types (i.e. [shared.OverloadedError]).
+		// See https://github.com/anthropics/anthropic-sdk-go/blob/v1.12.0/packages/ssestream/ssestream.go#L172-L174
+		// All it does is wrap the payload in an error - which is all we can return, currently.
+		return newErrorResponse(xerrors.Errorf("unknown stream error: %w", streamErr))
+	}
+	if lastErr != nil {
+		logger.Warn(ctx, "stream processing failed", slog.Error(lastErr))
+		return newErrorResponse(xerrors.Errorf("processing error: %w", lastErr))
+	}
+	return nil
 }
 
 func (i *StreamingInterception) marshalEvent(event anthropic.MessageStreamEventUnion) ([]byte, error) {
@@ -585,9 +680,10 @@ func (*StreamingInterception) encodeForStream(payload []byte, typ string) []byte
 }
 
 // newStream traces svc.NewStreaming() call.
-func (i *StreamingInterception) newStream(ctx context.Context, svc anthropic.MessageService) *ssestream.Stream[anthropic.MessageStreamEventUnion] {
+func (i *StreamingInterception) newStream(ctx context.Context, svc anthropic.MessageService, extraOpts ...option.RequestOption) *ssestream.Stream[anthropic.MessageStreamEventUnion] {
 	_, span := i.tracer.Start(ctx, "Intercept.ProcessRequest.Upstream", trace.WithAttributes(tracing.InterceptionAttributesFromContext(ctx)...))
 	defer span.End()
 
-	return svc.NewStreaming(ctx, anthropic.MessageNewParams{}, i.withBody())
+	opts := append([]option.RequestOption{i.withBody()}, extraOpts...)
+	return svc.NewStreaming(ctx, anthropic.MessageNewParams{}, opts...)
 }
