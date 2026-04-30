@@ -10625,10 +10625,10 @@ func TestChatTitleGenerationModelOverride(t *testing.T) {
 	})
 
 	t.Run("MalformedStoredOverrideIsReported", func(t *testing.T) {
-		err := db.UpsertRuntimeConfig(dbauthz.AsSystemRestricted(ctx), database.UpsertRuntimeConfigParams{
-			Key:   "agents_chat_title_generation_model_override",
-			Value: "not-a-uuid",
-		})
+		err := db.UpsertChatTitleGenerationModelOverride(
+			dbauthz.AsSystemRestricted(ctx),
+			"not-a-uuid",
+		)
 		require.NoError(t, err)
 
 		resp, err := getOverride(ctx)
