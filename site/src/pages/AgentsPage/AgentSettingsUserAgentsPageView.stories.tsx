@@ -141,10 +141,10 @@ const getSection = async (
 	return section;
 };
 
-const selectOverride = async (
+const selectOption = async (
 	section: HTMLElement,
 	canvasElement: HTMLElement,
-	comboboxName: string,
+	comboboxName: string | RegExp,
 	optionName: string | RegExp,
 ) => {
 	await userEvent.click(
@@ -208,10 +208,16 @@ export const EnabledWithSavedValues: Story = {
 	}),
 	play: async ({ canvasElement, args }) => {
 		const rootSection = await getSection(canvasElement, "Root agent model");
-		await selectOverride(
+		await selectOption(
 			rootSection,
 			canvasElement,
-			"Root agent model override",
+			"Root agent model behavior",
+			"Specific model",
+		);
+		await selectOption(
+			rootSection,
+			canvasElement,
+			"Select model",
 			/Claude Sonnet 4/i,
 		);
 		const rootSaveButton = within(rootSection).getByRole("button", {
@@ -232,10 +238,10 @@ export const EnabledWithSavedValues: Story = {
 			canvasElement,
 			"General subagent model",
 		);
-		await selectOverride(
+		await selectOption(
 			generalSection,
 			canvasElement,
-			"General subagent model override",
+			"General subagent model behavior",
 			"Chat default",
 		);
 		await userEvent.click(
@@ -424,25 +430,27 @@ export const ModelConfigsError: Story = {
 			expect(
 				within(section).getByText("Failed to load model configs."),
 			).toBeInTheDocument();
-			expect(within(section).getByRole("combobox")).toBeEnabled();
+			expect(
+				within(section).getByRole("combobox", { name: /behavior/i }),
+			).toBeEnabled();
 		}
 
-		await selectOverride(
+		await selectOption(
 			rootSection,
 			canvasElement,
-			"Root agent model override",
+			"Root agent model behavior",
 			"Chat default",
 		);
-		await selectOverride(
+		await selectOption(
 			generalSection,
 			canvasElement,
-			"General subagent model override",
+			"General subagent model behavior",
 			"Deployment default",
 		);
-		await selectOverride(
+		await selectOption(
 			exploreSection,
 			canvasElement,
-			"Explore subagent model override",
+			"Explore subagent model behavior",
 			"Chat default",
 		);
 
@@ -463,7 +471,7 @@ export const LoadingState: Story = {
 		const rootSection = await getSection(canvasElement, "Root agent model");
 		expect(
 			within(rootSection).getByRole("combobox", {
-				name: "Root agent model override",
+				name: "Root agent model behavior",
 			}),
 		).toBeDisabled();
 		expect(
@@ -498,7 +506,9 @@ export const OverridesError: Story = {
 			"Explore subagent model",
 		);
 		for (const section of [rootSection, generalSection, exploreSection]) {
-			expect(within(section).getByRole("combobox")).toBeDisabled();
+			expect(
+				within(section).getByRole("combobox", { name: /behavior/i }),
+			).toBeDisabled();
 			expect(
 				within(section).getByRole("button", { name: "Save" }),
 			).toBeDisabled();
@@ -544,7 +554,7 @@ export const AdminDisabledReadOnly: Story = {
 		const rootSection = await getSection(canvasElement, "Root agent model");
 		expect(
 			within(rootSection).getByRole("combobox", {
-				name: "Root agent model override",
+				name: "Root agent model behavior",
 			}),
 		).toBeDisabled();
 		expect(
@@ -575,10 +585,10 @@ export const InvalidRootDeploymentDefault: Story = {
 			within(rootSection).getByRole("button", { name: "Save" }),
 		).toBeDisabled();
 
-		await selectOverride(
+		await selectOption(
 			rootSection,
 			canvasElement,
-			"Root agent model override",
+			"Root agent model behavior",
 			"Chat default",
 		);
 		await userEvent.click(

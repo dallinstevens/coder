@@ -5,15 +5,12 @@ import { Button } from "#/components/Button/Button";
 import {
 	Select,
 	SelectContent,
-	SelectGroup,
 	SelectItem,
-	SelectLabel,
 	SelectTrigger,
 	SelectValue,
 } from "#/components/Select/Select";
 import { useModelOverrideForm } from "../hooks/useModelOverrideForm";
-import { formatProviderLabel } from "../utils/modelOptions";
-import type { ModelSelectorOption } from "./ChatElements";
+import { ModelSelector, type ModelSelectorOption } from "./ChatElements";
 import { ModelOverrideAlerts } from "./ModelOverrideAlerts";
 import { SectionHeader } from "./SectionHeader";
 
@@ -33,9 +30,10 @@ export type SavePersonalOverride = (
 	options?: MutationCallbacks,
 ) => void;
 
-type ModeSelectionValue = `mode:${PersonalOverrideMode}`;
-type ModelSelectionValue = `model:${string}`;
-type SelectionValue = ModeSelectionValue | ModelSelectionValue;
+interface PersonalOverrideFormValues {
+	mode: PersonalOverrideMode;
+	model_config_id: string;
+}
 
 interface PersonalModelOverrideRowProps {
 	context: PersonalOverrideContext;
@@ -53,44 +51,36 @@ interface PersonalModelOverrideRowProps {
 	disabled: boolean;
 }
 
-const modeSelectionValue = (mode: PersonalOverrideMode): ModeSelectionValue => {
-	return `mode:${mode}` as const;
+const getDefaultMode = (
+	context: PersonalOverrideContext,
+): PersonalOverrideMode => {
+	return context === "root" ? "chat_default" : "deployment_default";
 };
 
-const modelSelectionValue = (modelConfigID: string): ModelSelectionValue => {
-	return `model:${modelConfigID}` as const;
-};
-
-const EMPTY_MODEL_PLACEHOLDER = modelSelectionValue("__empty__");
-
-const toSelectionValue = (
+const toFormValues = (
 	overrideData: PersonalOverride | undefined,
 	context: PersonalOverrideContext,
-): SelectionValue => {
+): PersonalOverrideFormValues => {
 	if (!overrideData || overrideData.is_malformed) {
-		return modeSelectionValue(
-			context === "root" ? "chat_default" : "deployment_default",
-		);
+		return { mode: getDefaultMode(context), model_config_id: "" };
 	}
-	if (overrideData.mode === "model") {
-		return modelSelectionValue(overrideData.model_config_id);
-	}
-	return modeSelectionValue(overrideData.mode);
+	return {
+		mode: overrideData.mode,
+		model_config_id:
+			overrideData.mode === "model" ? overrideData.model_config_id : "",
+	};
 };
 
-const parseSelectionValue = (
-	selection: string,
+const toUpdateRequest = (
+	values: PersonalOverrideFormValues,
 ): UpdatePersonalOverrideRequest => {
-	if (selection.startsWith("model:")) {
+	if (values.mode === "model") {
 		return {
 			mode: "model",
-			model_config_id: selection.slice("model:".length),
+			model_config_id: values.model_config_id,
 		};
 	}
-	if (selection === modeSelectionValue("deployment_default")) {
-		return { mode: "deployment_default", model_config_id: "" };
-	}
-	return { mode: "chat_default", model_config_id: "" };
+	return { mode: values.mode, model_config_id: "" };
 };
 
 const getModeLabel = (mode: PersonalOverrideMode): string => {
@@ -123,12 +113,12 @@ const getUnavailableModelLabel = (
 
 const getSelectionHelp = (
 	context: PersonalOverrideContext,
-	selection: string,
+	mode: PersonalOverrideMode,
 ): string => {
-	if (selection.startsWith("model:")) {
+	if (mode === "model") {
 		return "Uses the selected model for this context.";
 	}
-	if (selection === modeSelectionValue("deployment_default")) {
+	if (mode === "deployment_default") {
 		if (context === "root") {
 			return "Not supported for root agents.";
 		}
@@ -149,8 +139,8 @@ const getOfferedModes = (
 	context: PersonalOverrideContext,
 ): readonly PersonalOverrideMode[] => {
 	return context === "root"
-		? ["chat_default"]
-		: ["deployment_default", "chat_default"];
+		? ["chat_default", "model"]
+		: ["deployment_default", "chat_default", "model"];
 };
 
 export const PersonalModelOverrideRow: FC<PersonalModelOverrideRowProps> = ({
@@ -171,11 +161,9 @@ export const PersonalModelOverrideRow: FC<PersonalModelOverrideRowProps> = ({
 	const hasLoadedOverride = overrideData !== undefined;
 	const isMalformedOverride = overrideData?.is_malformed ?? false;
 	const { form, isFormDisabled, canSave } = useModelOverrideForm({
-		initialValues: {
-			selection: toSelectionValue(overrideData, context),
-		},
+		initialValues: toFormValues(overrideData, context),
 		onSubmit: (values, { resetForm }) => {
-			onSave(parseSelectionValue(values.selection), {
+			onSave(toUpdateRequest(values), {
 				onSuccess: () => resetForm({ values }),
 			});
 		},
@@ -186,7 +174,7 @@ export const PersonalModelOverrideRow: FC<PersonalModelOverrideRowProps> = ({
 		isMalformedOverride,
 	});
 	const offeredModes = getOfferedModes(context);
-	const selectionHelp = getSelectionHelp(context, form.values.selection);
+	const selectionHelp = getSelectionHelp(context, form.values.mode);
 	const isInvalidRootDeploymentDefault =
 		context === "root" && overrideData?.mode === "deployment_default";
 	const isUnavailableSavedModel =
@@ -194,72 +182,60 @@ export const PersonalModelOverrideRow: FC<PersonalModelOverrideRowProps> = ({
 		overrideData.is_set &&
 		overrideData.model_config_id.trim() !== "" &&
 		!modelOptions.some((option) => option.id === overrideData.model_config_id);
+	const isUnavailableSelectedModel =
+		form.values.mode === "model" &&
+		form.values.model_config_id.trim() !== "" &&
+		!modelOptions.some((option) => option.id === form.values.model_config_id);
+	const modelSelectorPlaceholder = isUnavailableSelectedModel
+		? getUnavailableModelLabel(form.values.model_config_id, modelConfigs)
+		: "Select model";
+	const canSaveSelection =
+		canSave &&
+		(form.values.mode !== "model" || form.values.model_config_id.trim() !== "");
 
 	return (
 		<section aria-label={title} className="flex flex-col gap-3">
 			<SectionHeader label={title} description={description} level="section" />
 			<form className="flex flex-col gap-3" onSubmit={form.handleSubmit}>
 				<Select
-					value={form.values.selection}
-					onValueChange={(selection) => {
-						void form.setFieldValue("selection", selection);
+					value={form.values.mode}
+					onValueChange={(mode: PersonalOverrideMode) => {
+						void form.setFieldValue("mode", mode);
 					}}
 					disabled={isFormDisabled}
 				>
-					<SelectTrigger aria-label={`${title} override`}>
-						<SelectValue placeholder="Select model behavior" />
+					<SelectTrigger aria-label={`${title} behavior`}>
+						<SelectValue placeholder="Select behavior" />
 					</SelectTrigger>
 					<SelectContent className="min-w-[18rem]">
-						<SelectGroup>
-							<SelectLabel>Defaults</SelectLabel>
-							{offeredModes.map((mode) => (
-								<SelectItem key={mode} value={modeSelectionValue(mode)}>
-									{getModeLabel(mode)}
-								</SelectItem>
-							))}
-							{isInvalidRootDeploymentDefault && (
-								<SelectItem
-									value={modeSelectionValue("deployment_default")}
-									disabled
-								>
-									Invalid deployment default
-								</SelectItem>
-							)}
-						</SelectGroup>
-						<SelectGroup>
-							<SelectLabel>Models</SelectLabel>
-							{modelOptions.map((option) => (
-								<SelectItem
-									key={option.id}
-									value={modelSelectionValue(option.id)}
-								>
-									<span className="flex flex-col">
-										<span>{option.displayName}</span>
-										<span className="text-content-secondary text-[11px] leading-tight">
-											via {formatProviderLabel(option.provider)}
-										</span>
-									</span>
-								</SelectItem>
-							))}
-							{isUnavailableSavedModel && overrideData?.model_config_id && (
-								<SelectItem
-									value={modelSelectionValue(overrideData.model_config_id)}
-									disabled
-								>
-									{getUnavailableModelLabel(
-										overrideData.model_config_id,
-										modelConfigs,
-									)}
-								</SelectItem>
-							)}
-							{modelOptions.length === 0 && !isUnavailableSavedModel && (
-								<SelectItem value={EMPTY_MODEL_PLACEHOLDER} disabled>
-									No enabled models found.
-								</SelectItem>
-							)}
-						</SelectGroup>
+						{offeredModes.map((mode) => (
+							<SelectItem key={mode} value={mode}>
+								{getModeLabel(mode)}
+							</SelectItem>
+						))}
+						{isInvalidRootDeploymentDefault && (
+							<SelectItem value="deployment_default" disabled>
+								Invalid deployment default
+							</SelectItem>
+						)}
 					</SelectContent>
 				</Select>
+				{form.values.mode === "model" && (
+					<ModelSelector
+						options={modelOptions}
+						value={form.values.model_config_id}
+						onValueChange={(value) => {
+							void form.setFieldValue("model_config_id", value);
+						}}
+						disabled={isFormDisabled}
+						placeholder={modelSelectorPlaceholder}
+						emptyMessage={
+							isLoading ? "Loading models..." : "No enabled models found."
+						}
+						className="h-10 w-full justify-between rounded-md border border-border border-solid bg-transparent px-3 text-sm shadow-sm"
+						contentClassName="min-w-[18rem]"
+					/>
+				)}
 				<p className="m-0 text-xs text-content-secondary">{selectionHelp}</p>
 				<ModelOverrideAlerts
 					isUnavailableSavedModel={isUnavailableSavedModel}
@@ -279,7 +255,11 @@ export const PersonalModelOverrideRow: FC<PersonalModelOverrideRowProps> = ({
 					)}
 				</ModelOverrideAlerts>
 				<div className="flex justify-end">
-					<Button size="sm" type="submit" disabled={isFormDisabled || !canSave}>
+					<Button
+						size="sm"
+						type="submit"
+						disabled={isFormDisabled || !canSaveSelection}
+					>
 						Save
 					</Button>
 				</div>
