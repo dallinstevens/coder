@@ -2138,6 +2138,16 @@ export const ChatPersonalModelOverrideContexts: ChatPersonalModelOverrideContext
 	["explore", "general", "root"];
 
 // From codersdk/chats.go
+/**
+ * ChatPersonalModelOverrideDeploymentDefaults describes the deployment-level
+ * defaults used when a personal override selects deployment_default.
+ */
+export interface ChatPersonalModelOverrideDeploymentDefaults {
+	readonly general: ChatAgentModelOverrideResponse;
+	readonly explore: ChatAgentModelOverrideResponse;
+}
+
+// From codersdk/chats.go
 export type ChatPersonalModelOverrideMode =
 	| "chat_default"
 	| "deployment_default"
@@ -8427,6 +8437,7 @@ export interface UserChatPersonalModelOverridesResponse {
 	readonly root: ChatPersonalModelOverride;
 	readonly general: ChatPersonalModelOverride;
 	readonly explore: ChatPersonalModelOverride;
+	readonly deployment_defaults: ChatPersonalModelOverrideDeploymentDefaults;
 }
 
 // From codersdk/chats.go

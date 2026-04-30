@@ -107,6 +107,7 @@ export const AgentSettingsUserAgentsPageView: FC<
 				title="General subagent model"
 				description="Choose the model behavior for delegated agents with write capabilities."
 				overrideData={overridesData?.general}
+				deploymentDefault={overridesData?.deployment_defaults.general}
 				modelOptions={modelOptions}
 				modelConfigs={modelConfigs}
 				modelConfigsError={modelConfigsError}
@@ -122,6 +123,7 @@ export const AgentSettingsUserAgentsPageView: FC<
 				title="Explore subagent model"
 				description="Choose the model behavior for read-only Explore subagents."
 				overrideData={overridesData?.explore}
+				deploymentDefault={overridesData?.deployment_defaults.explore}
 				modelOptions={modelOptions}
 				modelConfigs={modelConfigs}
 				modelConfigsError={modelConfigsError}

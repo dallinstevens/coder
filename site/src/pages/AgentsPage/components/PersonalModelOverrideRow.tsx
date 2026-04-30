@@ -5,12 +5,14 @@ import { Button } from "#/components/Button/Button";
 import {
 	Select,
 	SelectContent,
+	SelectGroup,
 	SelectItem,
+	SelectSeparator,
 	SelectTrigger,
 	SelectValue,
 } from "#/components/Select/Select";
 import { useModelOverrideForm } from "../hooks/useModelOverrideForm";
-import { ModelSelector, type ModelSelectorOption } from "./ChatElements";
+import type { ModelSelectorOption } from "./ChatElements";
 import { ModelOverrideAlerts } from "./ModelOverrideAlerts";
 import { SectionHeader } from "./SectionHeader";
 
@@ -40,6 +42,7 @@ interface PersonalModelOverrideRowProps {
 	title: string;
 	description: string;
 	overrideData: PersonalOverride | undefined;
+	deploymentDefault?: TypesGen.ChatAgentModelOverrideResponse;
 	modelOptions: readonly ModelSelectorOption[];
 	modelConfigs: readonly TypesGen.ChatModelConfig[];
 	modelConfigsError: unknown;
@@ -83,40 +86,122 @@ const toUpdateRequest = (
 	return { mode: values.mode, model_config_id: "" };
 };
 
-const getModeLabel = (mode: PersonalOverrideMode): string => {
-	switch (mode) {
-		case "chat_default":
-			return "Chat default";
-		case "deployment_default":
-			return "Deployment default";
-		case "model":
-			return "Specific model";
-	}
-};
-
 const getModelConfigLabel = (modelConfig: TypesGen.ChatModelConfig): string => {
 	return modelConfig.display_name.trim() || modelConfig.model || modelConfig.id;
+};
+
+const getModelOptionLabel = (option: ModelSelectorOption): string => {
+	return option.displayName.trim() || option.model || option.id;
+};
+
+const getModelConfigLabelByID = (
+	modelConfigID: string,
+	modelConfigs: readonly TypesGen.ChatModelConfig[],
+): string | undefined => {
+	const modelConfig = modelConfigs.find(
+		(config) => config.id === modelConfigID,
+	);
+	return modelConfig ? getModelConfigLabel(modelConfig) : undefined;
 };
 
 const getUnavailableModelLabel = (
 	modelConfigID: string,
 	modelConfigs: readonly TypesGen.ChatModelConfig[],
 ): string => {
-	const modelConfig = modelConfigs.find(
-		(config) => config.id === modelConfigID,
-	);
-	if (!modelConfig) {
+	const modelConfigLabel = getModelConfigLabelByID(modelConfigID, modelConfigs);
+	if (!modelConfigLabel) {
 		return `Unavailable model (${modelConfigID})`;
 	}
-	return `Unavailable: ${getModelConfigLabel(modelConfig)}`;
+	return `Unavailable: ${modelConfigLabel}`;
 };
 
-const getOfferedModes = (
+const getDefaultModeOptions = (
 	context: PersonalOverrideContext,
-): readonly PersonalOverrideMode[] => {
+): readonly Exclude<PersonalOverrideMode, "model">[] => {
 	return context === "root"
-		? ["chat_default", "model"]
-		: ["deployment_default", "chat_default", "model"];
+		? ["chat_default"]
+		: ["deployment_default", "chat_default"];
+};
+
+const getChatDefaultDescription = (
+	context: PersonalOverrideContext,
+	modelConfigs: readonly TypesGen.ChatModelConfig[],
+): string => {
+	if (context !== "root") {
+		return "Your current chat model";
+	}
+	const defaultModel = modelConfigs.find((config) => config.is_default);
+	return defaultModel
+		? getModelConfigLabel(defaultModel)
+		: "Model definition default";
+};
+
+const getDeploymentDefaultDescription = (
+	deploymentDefault: TypesGen.ChatAgentModelOverrideResponse | undefined,
+	modelConfigs: readonly TypesGen.ChatModelConfig[],
+): string => {
+	if (!deploymentDefault) {
+		return "Loading deployment default";
+	}
+	if (deploymentDefault.is_malformed) {
+		return "Invalid deployment default";
+	}
+	const modelConfigID = deploymentDefault.model_config_id.trim();
+	if (modelConfigID === "") {
+		return "Chat default fallback";
+	}
+	return (
+		getModelConfigLabelByID(modelConfigID, modelConfigs) ??
+		`Unavailable model (${modelConfigID})`
+	);
+};
+
+const getSelectionLabel = ({
+	context,
+	deploymentDefault,
+	isInvalidRootDeploymentDefault,
+	modelConfigs,
+	modelOptions,
+	values,
+}: {
+	context: PersonalOverrideContext;
+	deploymentDefault?: TypesGen.ChatAgentModelOverrideResponse;
+	isInvalidRootDeploymentDefault: boolean;
+	modelConfigs: readonly TypesGen.ChatModelConfig[];
+	modelOptions: readonly ModelSelectorOption[];
+	values: PersonalOverrideFormValues;
+}): string => {
+	if (isInvalidRootDeploymentDefault) {
+		return "Invalid deployment default";
+	}
+
+	switch (values.mode) {
+		case "chat_default":
+			return `Chat default: ${getChatDefaultDescription(context, modelConfigs)}`;
+		case "deployment_default":
+			return `Deployment default: ${getDeploymentDefaultDescription(
+				deploymentDefault,
+				modelConfigs,
+			)}`;
+		case "model": {
+			const modelConfigID = values.model_config_id.trim();
+			const modelOption = modelOptions.find(
+				(option) => option.id === modelConfigID,
+			);
+			if (modelOption) {
+				return getModelOptionLabel(modelOption);
+			}
+			return modelConfigID === ""
+				? "Select..."
+				: getUnavailableModelLabel(modelConfigID, modelConfigs);
+		}
+	}
+};
+
+const isDefaultModeOption = (
+	value: string,
+): value is Exclude<PersonalOverrideMode, "model"> => {
+	return value === "chat_default" || value === "deployment_default";
 };
 
 const selectorTriggerClassName =
@@ -127,6 +212,7 @@ export const PersonalModelOverrideRow: FC<PersonalModelOverrideRowProps> = ({
 	title,
 	description,
 	overrideData,
+	deploymentDefault,
 	modelOptions,
 	modelConfigs,
 	modelConfigsError,
@@ -152,7 +238,7 @@ export const PersonalModelOverrideRow: FC<PersonalModelOverrideRowProps> = ({
 		hasLoadedOverride,
 		isMalformedOverride,
 	});
-	const offeredModes = getOfferedModes(context);
+	const defaultModeOptions = getDefaultModeOptions(context);
 	const isInvalidRootDeploymentDefault =
 		context === "root" && overrideData?.mode === "deployment_default";
 	const isUnavailableSavedModel =
@@ -164,21 +250,36 @@ export const PersonalModelOverrideRow: FC<PersonalModelOverrideRowProps> = ({
 		form.values.mode === "model" &&
 		form.values.model_config_id.trim() !== "" &&
 		!modelOptions.some((option) => option.id === form.values.model_config_id);
-	const modelSelectorPlaceholder = isUnavailableSelectedModel
-		? getUnavailableModelLabel(form.values.model_config_id, modelConfigs)
-		: "Select model";
+	const selectionValue =
+		form.values.mode === "model"
+			? form.values.model_config_id
+			: form.values.mode;
+	const selectionLabel = getSelectionLabel({
+		context,
+		deploymentDefault,
+		isInvalidRootDeploymentDefault,
+		modelConfigs,
+		modelOptions,
+		values: form.values,
+	});
 	const canSaveSelection =
 		canSave &&
-		(form.values.mode !== "model" || form.values.model_config_id.trim() !== "");
+		(form.values.mode !== "model" ||
+			(form.values.model_config_id.trim() !== "" &&
+				!isUnavailableSelectedModel));
 
 	return (
 		<section aria-label={title} className="flex flex-col gap-3">
 			<SectionHeader label={title} description={description} level="section" />
 			<form className="flex flex-col gap-3" onSubmit={form.handleSubmit}>
 				<Select
-					value={form.values.mode}
-					onValueChange={(mode: PersonalOverrideMode) => {
-						void form.setFieldValue("mode", mode);
+					value={selectionValue}
+					onValueChange={(value) => {
+						if (isDefaultModeOption(value)) {
+							void form.setValues({ mode: value, model_config_id: "" });
+							return;
+						}
+						void form.setValues({ mode: "model", model_config_id: value });
 					}}
 					disabled={isFormDisabled}
 				>
@@ -186,37 +287,54 @@ export const PersonalModelOverrideRow: FC<PersonalModelOverrideRowProps> = ({
 						aria-label={`${title} behavior`}
 						className={selectorTriggerClassName}
 					>
-						<SelectValue placeholder="Select behavior" />
+						<SelectValue placeholder="Select...">{selectionLabel}</SelectValue>
 					</SelectTrigger>
 					<SelectContent className="min-w-[18rem]">
-						{offeredModes.map((mode) => (
-							<SelectItem key={mode} value={mode}>
-								{getModeLabel(mode)}
-							</SelectItem>
-						))}
 						{isInvalidRootDeploymentDefault && (
-							<SelectItem value="deployment_default" disabled>
-								Invalid deployment default
-							</SelectItem>
+							<>
+								<SelectItem value="deployment_default" disabled>
+									Invalid deployment default
+								</SelectItem>
+								<SelectSeparator />
+							</>
 						)}
+						<SelectGroup>
+							{defaultModeOptions.map((mode) => (
+								<DefaultModeSelectItem
+									key={mode}
+									mode={mode}
+									context={context}
+									deploymentDefault={deploymentDefault}
+									modelConfigs={modelConfigs}
+								/>
+							))}
+						</SelectGroup>
+						<SelectSeparator />
+						{isUnavailableSelectedModel && (
+							<>
+								<SelectItem value={form.values.model_config_id} disabled>
+									{getUnavailableModelLabel(
+										form.values.model_config_id,
+										modelConfigs,
+									)}
+								</SelectItem>
+								<SelectSeparator />
+							</>
+						)}
+						<SelectGroup>
+							{modelOptions.map((option) => (
+								<SelectItem key={option.id} value={option.id}>
+									{getModelOptionLabel(option)}
+								</SelectItem>
+							))}
+							{modelOptions.length === 0 && (
+								<SelectItem value="__empty_models__" disabled>
+									{isLoading ? "Loading models..." : "No enabled models found."}
+								</SelectItem>
+							)}
+						</SelectGroup>
 					</SelectContent>
 				</Select>
-				{form.values.mode === "model" && (
-					<ModelSelector
-						options={modelOptions}
-						value={form.values.model_config_id}
-						onValueChange={(value) => {
-							void form.setFieldValue("model_config_id", value);
-						}}
-						disabled={isFormDisabled}
-						placeholder={modelSelectorPlaceholder}
-						emptyMessage={
-							isLoading ? "Loading models..." : "No enabled models found."
-						}
-						className={selectorTriggerClassName}
-						contentClassName="min-w-[18rem]"
-					/>
-				)}
 				<ModelOverrideAlerts
 					isUnavailableSavedModel={isUnavailableSavedModel}
 					unavailableMessage="The saved model is unavailable and will be ignored until you choose a valid model override."
@@ -250,5 +368,37 @@ export const PersonalModelOverrideRow: FC<PersonalModelOverrideRowProps> = ({
 				)}
 			</form>
 		</section>
+	);
+};
+
+interface DefaultModeSelectItemProps {
+	mode: Exclude<PersonalOverrideMode, "model">;
+	context: PersonalOverrideContext;
+	deploymentDefault?: TypesGen.ChatAgentModelOverrideResponse;
+	modelConfigs: readonly TypesGen.ChatModelConfig[];
+}
+
+const DefaultModeSelectItem: FC<DefaultModeSelectItemProps> = ({
+	mode,
+	context,
+	deploymentDefault,
+	modelConfigs,
+}) => {
+	const label =
+		mode === "deployment_default" ? "Deployment default" : "Chat default";
+	const description =
+		mode === "deployment_default"
+			? getDeploymentDefaultDescription(deploymentDefault, modelConfigs)
+			: getChatDefaultDescription(context, modelConfigs);
+
+	return (
+		<SelectItem value={mode}>
+			<span className="flex min-w-0 flex-col">
+				<span className="truncate text-content-primary">{label}</span>
+				<span className="truncate text-content-secondary text-xs leading-tight">
+					{description}
+				</span>
+			</span>
+		</SelectItem>
 	);
 };

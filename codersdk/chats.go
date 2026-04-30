@@ -633,13 +633,21 @@ type ChatPersonalModelOverride struct {
 	IsMalformed   bool                             `json:"is_malformed"`
 }
 
+// ChatPersonalModelOverrideDeploymentDefaults describes the deployment-level
+// defaults used when a personal override selects deployment_default.
+type ChatPersonalModelOverrideDeploymentDefaults struct {
+	General ChatAgentModelOverrideResponse `json:"general"`
+	Explore ChatAgentModelOverrideResponse `json:"explore"`
+}
+
 // UserChatPersonalModelOverridesResponse is the response body for user
 // personal model override settings.
 type UserChatPersonalModelOverridesResponse struct {
-	Enabled bool                      `json:"enabled"`
-	Root    ChatPersonalModelOverride `json:"root"`
-	General ChatPersonalModelOverride `json:"general"`
-	Explore ChatPersonalModelOverride `json:"explore"`
+	Enabled            bool                                        `json:"enabled"`
+	Root               ChatPersonalModelOverride                   `json:"root"`
+	General            ChatPersonalModelOverride                   `json:"general"`
+	Explore            ChatPersonalModelOverride                   `json:"explore"`
+	DeploymentDefaults ChatPersonalModelOverrideDeploymentDefaults `json:"deployment_defaults"`
 }
 
 // UpdateUserChatPersonalModelOverrideRequest is the request body for updating

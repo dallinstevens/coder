@@ -664,6 +664,51 @@ func chatPersonalModelOverrideResponse(
 	}
 }
 
+func (api *API) chatPersonalModelOverrideDeploymentDefaultResponse(
+	ctx context.Context,
+	overrideContext codersdk.ChatAgentModelOverrideContext,
+) (codersdk.ChatAgentModelOverrideResponse, error) {
+	// The deployment defaults are global chat configuration, not user-owned
+	// resources. Users may read these values here because the personal settings
+	// UI must explain what deployment_default resolves to.
+	//nolint:gocritic // System context is required to read deployment config.
+	modelConfigID, isMalformed, err := api.getChatAgentModelOverrideConfig(
+		dbauthz.AsSystemRestricted(ctx),
+		overrideContext,
+	)
+	if err != nil {
+		return codersdk.ChatAgentModelOverrideResponse{}, err
+	}
+	return codersdk.ChatAgentModelOverrideResponse{
+		Context:       overrideContext,
+		ModelConfigID: formatChatModelOverride(modelConfigID),
+		IsMalformed:   isMalformed,
+	}, nil
+}
+
+func (api *API) chatPersonalModelOverrideDeploymentDefaults(
+	ctx context.Context,
+) (codersdk.ChatPersonalModelOverrideDeploymentDefaults, error) {
+	general, err := api.chatPersonalModelOverrideDeploymentDefaultResponse(
+		ctx,
+		codersdk.ChatAgentModelOverrideContextGeneral,
+	)
+	if err != nil {
+		return codersdk.ChatPersonalModelOverrideDeploymentDefaults{}, err
+	}
+	explore, err := api.chatPersonalModelOverrideDeploymentDefaultResponse(
+		ctx,
+		codersdk.ChatAgentModelOverrideContextExplore,
+	)
+	if err != nil {
+		return codersdk.ChatPersonalModelOverrideDeploymentDefaults{}, err
+	}
+	return codersdk.ChatPersonalModelOverrideDeploymentDefaults{
+		General: general,
+		Explore: explore,
+	}, nil
+}
+
 type userChatModelAvailability struct {
 	configuredProviders  []chatprovider.ConfiguredProvider
 	configuredModels     []chatprovider.ConfiguredModel
@@ -4384,7 +4429,19 @@ func (api *API) getUserChatPersonalModelOverrides(rw http.ResponseWriter, r *htt
 		values[overrideContext] = row.Value
 	}
 
-	response := codersdk.UserChatPersonalModelOverridesResponse{Enabled: enabled}
+	deploymentDefaults, err := api.chatPersonalModelOverrideDeploymentDefaults(ctx)
+	if err != nil {
+		httpapi.Write(ctx, rw, http.StatusInternalServerError, codersdk.Response{
+			Message: "Internal error fetching deployment model defaults.",
+			Detail:  err.Error(),
+		})
+		return
+	}
+
+	response := codersdk.UserChatPersonalModelOverridesResponse{
+		Enabled:            enabled,
+		DeploymentDefaults: deploymentDefaults,
+	}
 	for _, overrideContext := range chatPersonalModelOverrideContexts {
 		raw, isSet := values[overrideContext]
 		override := chatPersonalModelOverrideResponse(overrideContext, raw, isSet)

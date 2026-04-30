@@ -40,13 +40,21 @@ const buildOverride = (
 	...overrides,
 });
 
-const buildOverridesResponse = (
-	overrides: Partial<TypesGen.UserChatPersonalModelOverridesResponse> = {},
-): TypesGen.UserChatPersonalModelOverridesResponse => ({
-	enabled: true,
-	root: buildOverride("root"),
-	general: buildOverride("general"),
-	explore: buildOverride("explore"),
+const buildDeploymentDefault = (
+	context: TypesGen.ChatAgentModelOverrideContext,
+	overrides: Partial<TypesGen.ChatAgentModelOverrideResponse> = {},
+): TypesGen.ChatAgentModelOverrideResponse => ({
+	context,
+	model_config_id: "",
+	is_malformed: false,
+	...overrides,
+});
+
+const buildDeploymentDefaults = (
+	overrides: Partial<TypesGen.ChatPersonalModelOverrideDeploymentDefaults> = {},
+): TypesGen.ChatPersonalModelOverrideDeploymentDefaults => ({
+	general: buildDeploymentDefault("general"),
+	explore: buildDeploymentDefault("explore"),
 	...overrides,
 });
 
@@ -101,6 +109,24 @@ const modelOptions: ModelSelectorOption[] = [
 		contextLimit: claudeModelConfig.context_limit,
 	},
 ];
+
+const buildOverridesResponse = (
+	overrides: Partial<TypesGen.UserChatPersonalModelOverridesResponse> = {},
+): TypesGen.UserChatPersonalModelOverridesResponse => ({
+	enabled: true,
+	root: buildOverride("root"),
+	general: buildOverride("general"),
+	explore: buildOverride("explore"),
+	deployment_defaults: buildDeploymentDefaults({
+		general: buildDeploymentDefault("general", {
+			model_config_id: claudeModelConfig.id,
+		}),
+		explore: buildDeploymentDefault("explore", {
+			model_config_id: claudeModelConfig.id,
+		}),
+	}),
+	...overrides,
+});
 
 const makeArgs = (
 	overrides: Partial<AgentSettingsUserAgentsPageViewProps> = {},
@@ -176,9 +202,13 @@ export const EnabledWithNoSavedValues: Story = {
 			"Explore subagent model",
 		);
 
-		expect(rootSection).toHaveTextContent("Chat default");
-		expect(generalSection).toHaveTextContent("Deployment default");
-		expect(exploreSection).toHaveTextContent("Deployment default");
+		expect(rootSection).toHaveTextContent("Chat default: GPT 4.1 Mini");
+		expect(generalSection).toHaveTextContent(
+			"Deployment default: Claude Sonnet 4",
+		);
+		expect(exploreSection).toHaveTextContent(
+			"Deployment default: Claude Sonnet 4",
+		);
 
 		for (const section of [rootSection, generalSection, exploreSection]) {
 			expect(
@@ -212,12 +242,6 @@ export const EnabledWithSavedValues: Story = {
 			rootSection,
 			canvasElement,
 			"Root agent model behavior",
-			"Specific model",
-		);
-		await selectOption(
-			rootSection,
-			canvasElement,
-			"Select model",
 			/Claude Sonnet 4/i,
 		);
 		const rootSaveButton = within(rootSection).getByRole("button", {
@@ -242,7 +266,7 @@ export const EnabledWithSavedValues: Story = {
 			generalSection,
 			canvasElement,
 			"General subagent model behavior",
-			"Chat default",
+			/Chat default/i,
 		);
 		await userEvent.click(
 			within(generalSection).getByRole("button", { name: "Save" }),
@@ -439,19 +463,19 @@ export const ModelConfigsError: Story = {
 			rootSection,
 			canvasElement,
 			"Root agent model behavior",
-			"Chat default",
+			/Chat default/i,
 		);
 		await selectOption(
 			generalSection,
 			canvasElement,
 			"General subagent model behavior",
-			"Deployment default",
+			/Deployment default/i,
 		);
 		await selectOption(
 			exploreSection,
 			canvasElement,
 			"Explore subagent model behavior",
-			"Chat default",
+			/Chat default/i,
 		);
 
 		expect(rootSection).toHaveTextContent("Chat default");
@@ -588,7 +612,7 @@ export const InvalidRootDeploymentDefault: Story = {
 			rootSection,
 			canvasElement,
 			"Root agent model behavior",
-			"Chat default",
+			/Chat default/i,
 		);
 		await userEvent.click(
 			within(rootSection).getByRole("button", { name: "Save" }),

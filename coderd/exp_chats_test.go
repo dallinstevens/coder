@@ -10609,7 +10609,7 @@ func TestUserChatPersonalModelOverrides(t *testing.T) {
 	noKeyClientRaw, noKeyUser := coderdtest.CreateAnotherUser(t, adminClient.Client, firstUser.OrganizationID)
 	noKeyClient := codersdk.NewExperimentalClient(noKeyClientRaw)
 
-	_ = createChatModelConfig(t, adminClient)
+	defaultModelConfig := createChatModelConfig(t, adminClient)
 	provider := enableUserChatProviderKey(t, adminClient, memberClient, "openai")
 	modelConfig := createAdditionalChatModelConfig(
 		t,
@@ -10617,6 +10617,15 @@ func TestUserChatPersonalModelOverrides(t *testing.T) {
 		"openai",
 		"gpt-4o-personal-"+uuid.NewString(),
 	)
+	err := adminClient.UpdateChatAgentModelOverride(ctx, codersdk.ChatAgentModelOverrideContextGeneral, codersdk.UpdateChatAgentModelOverrideRequest{
+		ModelConfigID: modelConfig.ID.String(),
+	})
+	require.NoError(t, err)
+	err = adminClient.UpdateChatAgentModelOverride(ctx, codersdk.ChatAgentModelOverrideContextExplore, codersdk.UpdateChatAgentModelOverrideRequest{
+		ModelConfigID: defaultModelConfig.ID.String(),
+	})
+	require.NoError(t, err)
+
 	disabledModelConfig := createDisabledChatModelConfig(
 		t,
 		adminClient,
@@ -10672,6 +10681,26 @@ func TestUserChatPersonalModelOverrides(t *testing.T) {
 		require.Equal(t, isSet, override.IsSet)
 		require.Equal(t, isMalformed, override.IsMalformed)
 	}
+	assertDeploymentDefault := func(
+		resp codersdk.UserChatPersonalModelOverridesResponse,
+		overrideContext codersdk.ChatAgentModelOverrideContext,
+		modelConfigID string,
+		isMalformed bool,
+	) {
+		t.Helper()
+		var override codersdk.ChatAgentModelOverrideResponse
+		switch overrideContext {
+		case codersdk.ChatAgentModelOverrideContextGeneral:
+			override = resp.DeploymentDefaults.General
+		case codersdk.ChatAgentModelOverrideContextExplore:
+			override = resp.DeploymentDefaults.Explore
+		default:
+			t.Fatalf("unexpected deployment model override context %q", overrideContext)
+		}
+		require.Equal(t, overrideContext, override.Context)
+		require.Equal(t, modelConfigID, override.ModelConfigID)
+		require.Equal(t, isMalformed, override.IsMalformed)
+	}
 	upsertRaw := func(
 		overrideContext codersdk.ChatPersonalModelOverrideContext,
 		value string,
@@ -10721,6 +10750,13 @@ func TestUserChatPersonalModelOverrides(t *testing.T) {
 		assertOverride(resp, codersdk.ChatPersonalModelOverrideContextRoot, codersdk.ChatPersonalModelOverrideModeChatDefault, "", true, false)
 		assertOverride(resp, codersdk.ChatPersonalModelOverrideContextGeneral, codersdk.ChatPersonalModelOverrideModeDeploymentDefault, "", true, false)
 		assertOverride(resp, codersdk.ChatPersonalModelOverrideContextExplore, codersdk.ChatPersonalModelOverrideModeModel, modelConfig.ID.String(), true, false)
+	})
+
+	t.Run("GETIncludesDeploymentDefaults", func(t *testing.T) {
+		resp, err := memberClient.GetUserChatPersonalModelOverrides(ctx)
+		require.NoError(t, err)
+		assertDeploymentDefault(resp, codersdk.ChatAgentModelOverrideContextGeneral, modelConfig.ID.String(), false)
+		assertDeploymentDefault(resp, codersdk.ChatAgentModelOverrideContextExplore, defaultModelConfig.ID.String(), false)
 	})
 
 	t.Run("PUTDisabledReturns403AndPreservesRows", func(t *testing.T) {
