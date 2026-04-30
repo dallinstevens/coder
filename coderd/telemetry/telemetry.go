@@ -823,30 +823,24 @@ func (r *remoteReporter) createSnapshot() (*Snapshot, error) {
 		return nil
 	})
 	eg.Go(func() error {
-		rows, err := r.options.Database.GetUserSecretsCountPerUserForTelemetry(ctx)
-		if err != nil {
-			return xerrors.Errorf("get user secrets count per user: %w", err)
-		}
-		snapshot.UserSecretsCountPerUser = make([]UserSecretsCountPerUser, 0, len(rows))
-		for _, row := range rows {
-			snapshot.UserSecretsCountPerUser = append(snapshot.UserSecretsCountPerUser, UserSecretsCountPerUser{
-				UserID:      row.UserID,
-				SecretCount: row.SecretCount,
-			})
-		}
-		return nil
-	})
-	eg.Go(func() error {
 		row, err := r.options.Database.GetUserSecretsTelemetrySummary(ctx)
 		if err != nil {
 			return xerrors.Errorf("get user secrets telemetry summary: %w", err)
 		}
 		snapshot.UserSecretsSummary = &UserSecretsSummary{
-			UsersWithSecrets: row.UsersWithSecrets,
-			EnvNameOnly:      row.EnvNameOnly,
-			FilePathOnly:     row.FilePathOnly,
-			Both:             row.Both,
-			Neither:          row.Neither,
+			UsersWithSecrets:  row.UsersWithSecrets,
+			TotalSecrets:      row.TotalSecrets,
+			EnvNameOnly:       row.EnvNameOnly,
+			FilePathOnly:      row.FilePathOnly,
+			Both:              row.Both,
+			Neither:           row.Neither,
+			SecretsPerUserMax: row.SecretsPerUserMax,
+			SecretsPerUserP25: row.SecretsPerUserP25,
+			SecretsPerUserP50: row.SecretsPerUserP50,
+			SecretsPerUserP75: row.SecretsPerUserP75,
+			SecretsPerUserP90: row.SecretsPerUserP90,
+			SecretsPerUserP95: row.SecretsPerUserP95,
+			SecretsPerUserP99: row.SecretsPerUserP99,
 		}
 		return nil
 	})
@@ -1582,7 +1576,6 @@ type Snapshot struct {
 	ChatMessageSummaries                 []ChatMessageSummary                  `json:"chat_message_summaries"`
 	ChatModelConfigs                     []ChatModelConfig                     `json:"chat_model_configs"`
 	ChatDiffStatusSummary                *ChatDiffStatusSummary                `json:"chat_diff_status_summary"`
-	UserSecretsCountPerUser              []UserSecretsCountPerUser             `json:"user_secrets_count_per_user"`
 	UserSecretsSummary                   *UserSecretsSummary                   `json:"user_secrets_summary"`
 }
 
@@ -2439,22 +2432,27 @@ type ChatDiffStatusSummary struct {
 	Closed int64 `json:"closed"`
 }
 
-// UserSecretsCountPerUser is one row per user with at least one
-// stored user secret. Used by telemetry to report adoption of the
-// user secrets feature.
-type UserSecretsCountPerUser struct {
-	UserID      uuid.UUID `json:"user_id"`
-	SecretCount int64     `json:"secret_count"`
-}
-
-// UserSecretsSummary contains deployment-wide counts of user
-// secrets grouped by which injection fields are populated.
+// UserSecretsSummary contains deployment-wide aggregates about
+// user secrets. UsersWithSecrets and TotalSecrets are total counts.
+// EnvNameOnly, FilePathOnly, Both, and Neither break TotalSecrets
+// down by which injection fields are populated. The SecretsPerUser*
+// fields describe the distribution of how many secrets each user
+// with at least one secret has stored, with Max and Px being the
+// 25th, 50th, 75th, 90th, 95th, and 99th percentiles.
 type UserSecretsSummary struct {
-	UsersWithSecrets int64 `json:"users_with_secrets"`
-	EnvNameOnly      int64 `json:"env_name_only"`
-	FilePathOnly     int64 `json:"file_path_only"`
-	Both             int64 `json:"both"`
-	Neither          int64 `json:"neither"`
+	UsersWithSecrets  int64 `json:"users_with_secrets"`
+	TotalSecrets      int64 `json:"total_secrets"`
+	EnvNameOnly       int64 `json:"env_name_only"`
+	FilePathOnly      int64 `json:"file_path_only"`
+	Both              int64 `json:"both"`
+	Neither           int64 `json:"neither"`
+	SecretsPerUserMax int64 `json:"secrets_per_user_max"`
+	SecretsPerUserP25 int64 `json:"secrets_per_user_p25"`
+	SecretsPerUserP50 int64 `json:"secrets_per_user_p50"`
+	SecretsPerUserP75 int64 `json:"secrets_per_user_p75"`
+	SecretsPerUserP90 int64 `json:"secrets_per_user_p90"`
+	SecretsPerUserP95 int64 `json:"secrets_per_user_p95"`
+	SecretsPerUserP99 int64 `json:"secrets_per_user_p99"`
 }
 
 func ConvertAIBridgeInterceptionsSummary(endTime time.Time, provider, model, client string, summary database.CalculateAIBridgeInterceptionsTelemetrySummaryRow) AIBridgeInterceptionsSummary {

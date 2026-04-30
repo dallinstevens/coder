@@ -4391,21 +4391,12 @@ func (q *querier) GetUserSecretByUserIDAndName(ctx context.Context, arg database
 	return q.db.GetUserSecretByUserIDAndName(ctx, arg)
 }
 
-func (q *querier) GetUserSecretsCountPerUserForTelemetry(ctx context.Context) ([]database.GetUserSecretsCountPerUserForTelemetryRow, error) {
-	// Telemetry queries are called from system contexts only and read
-	// metadata across all users' secrets. Authorize against the
-	// resource type rather than a per-user owner, matching the existing
-	// system-context pattern on ListUserSecretsWithValues.
-	if err := q.authorizeContext(ctx, policy.ActionRead, rbac.ResourceUserSecret); err != nil {
-		return nil, err
-	}
-	return q.db.GetUserSecretsCountPerUserForTelemetry(ctx)
-}
-
 func (q *querier) GetUserSecretsTelemetrySummary(ctx context.Context) (database.GetUserSecretsTelemetrySummaryRow, error) {
-	// Telemetry queries are called from system contexts only. See the
-	// note on GetUserSecretsCountPerUserForTelemetry for why this
-	// authorizes against the resource type.
+	// Telemetry queries are called from system contexts only. The
+	// query reads aggregate counts across all users' secrets, so
+	// authorize against the resource type rather than a per-user
+	// owner, matching the existing system-context pattern on
+	// ListUserSecretsWithValues.
 	if err := q.authorizeContext(ctx, policy.ActionRead, rbac.ResourceUserSecret); err != nil {
 		return database.GetUserSecretsTelemetrySummaryRow{}, err
 	}

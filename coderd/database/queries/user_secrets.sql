@@ -66,22 +66,30 @@ DELETE FROM user_secrets
 WHERE user_id = @user_id AND name = @name
 RETURNING *;
 
--- name: GetUserSecretsCountPerUserForTelemetry :many
--- Returns one row per user with at least one secret, used by the
--- telemetry snapshot.
-SELECT
-    user_id,
-    COUNT(*)::bigint AS secret_count
-FROM user_secrets
-GROUP BY user_id;
-
 -- name: GetUserSecretsTelemetrySummary :one
--- Returns deployment-wide counts of secrets grouped by which
--- injection fields are populated, used by the telemetry snapshot.
+-- Returns deployment-wide aggregates for the telemetry snapshot.
+-- Counts of secrets grouped by which injection fields are populated,
+-- and the distribution of secrets per user computed across users
+-- with at least one secret. Percentiles use percentile_disc so they
+-- return an integer count from the underlying values rather than
+-- interpolating between rows.
+WITH per_user AS (
+    SELECT user_id, COUNT(*)::bigint AS n
+    FROM user_secrets
+    GROUP BY user_id
+)
 SELECT
     COUNT(DISTINCT user_id)::bigint                                    AS users_with_secrets,
+    COUNT(*)::bigint                                                   AS total_secrets,
     COUNT(*) FILTER (WHERE env_name != '' AND file_path = '' )::bigint AS env_name_only,
     COUNT(*) FILTER (WHERE env_name = ''  AND file_path != '')::bigint AS file_path_only,
     COUNT(*) FILTER (WHERE env_name != '' AND file_path != '')::bigint AS both,
-    COUNT(*) FILTER (WHERE env_name = ''  AND file_path = '' )::bigint AS neither
+    COUNT(*) FILTER (WHERE env_name = ''  AND file_path = '' )::bigint AS neither,
+    COALESCE((SELECT MAX(n) FROM per_user), 0)::bigint                                                  AS secrets_per_user_max,
+    COALESCE((SELECT percentile_disc(0.25) WITHIN GROUP (ORDER BY n) FROM per_user), 0)::bigint         AS secrets_per_user_p25,
+    COALESCE((SELECT percentile_disc(0.50) WITHIN GROUP (ORDER BY n) FROM per_user), 0)::bigint         AS secrets_per_user_p50,
+    COALESCE((SELECT percentile_disc(0.75) WITHIN GROUP (ORDER BY n) FROM per_user), 0)::bigint         AS secrets_per_user_p75,
+    COALESCE((SELECT percentile_disc(0.90) WITHIN GROUP (ORDER BY n) FROM per_user), 0)::bigint         AS secrets_per_user_p90,
+    COALESCE((SELECT percentile_disc(0.95) WITHIN GROUP (ORDER BY n) FROM per_user), 0)::bigint         AS secrets_per_user_p95,
+    COALESCE((SELECT percentile_disc(0.99) WITHIN GROUP (ORDER BY n) FROM per_user), 0)::bigint         AS secrets_per_user_p99
 FROM user_secrets;

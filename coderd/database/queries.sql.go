@@ -24736,73 +24736,68 @@ func (q *sqlQuerier) GetUserSecretByUserIDAndName(ctx context.Context, arg GetUs
 	return i, err
 }
 
-const getUserSecretsCountPerUserForTelemetry = `-- name: GetUserSecretsCountPerUserForTelemetry :many
-SELECT
-    user_id,
-    COUNT(*)::bigint AS secret_count
-FROM user_secrets
-GROUP BY user_id
-`
-
-type GetUserSecretsCountPerUserForTelemetryRow struct {
-	UserID      uuid.UUID `db:"user_id" json:"user_id"`
-	SecretCount int64     `db:"secret_count" json:"secret_count"`
-}
-
-// Returns one row per user with at least one secret, used by the
-// telemetry snapshot.
-func (q *sqlQuerier) GetUserSecretsCountPerUserForTelemetry(ctx context.Context) ([]GetUserSecretsCountPerUserForTelemetryRow, error) {
-	rows, err := q.db.QueryContext(ctx, getUserSecretsCountPerUserForTelemetry)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []GetUserSecretsCountPerUserForTelemetryRow
-	for rows.Next() {
-		var i GetUserSecretsCountPerUserForTelemetryRow
-		if err := rows.Scan(&i.UserID, &i.SecretCount); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const getUserSecretsTelemetrySummary = `-- name: GetUserSecretsTelemetrySummary :one
+WITH per_user AS (
+    SELECT user_id, COUNT(*)::bigint AS n
+    FROM user_secrets
+    GROUP BY user_id
+)
 SELECT
     COUNT(DISTINCT user_id)::bigint                                    AS users_with_secrets,
+    COUNT(*)::bigint                                                   AS total_secrets,
     COUNT(*) FILTER (WHERE env_name != '' AND file_path = '' )::bigint AS env_name_only,
     COUNT(*) FILTER (WHERE env_name = ''  AND file_path != '')::bigint AS file_path_only,
     COUNT(*) FILTER (WHERE env_name != '' AND file_path != '')::bigint AS both,
-    COUNT(*) FILTER (WHERE env_name = ''  AND file_path = '' )::bigint AS neither
+    COUNT(*) FILTER (WHERE env_name = ''  AND file_path = '' )::bigint AS neither,
+    COALESCE((SELECT MAX(n) FROM per_user), 0)::bigint                                                  AS secrets_per_user_max,
+    COALESCE((SELECT percentile_disc(0.25) WITHIN GROUP (ORDER BY n) FROM per_user), 0)::bigint         AS secrets_per_user_p25,
+    COALESCE((SELECT percentile_disc(0.50) WITHIN GROUP (ORDER BY n) FROM per_user), 0)::bigint         AS secrets_per_user_p50,
+    COALESCE((SELECT percentile_disc(0.75) WITHIN GROUP (ORDER BY n) FROM per_user), 0)::bigint         AS secrets_per_user_p75,
+    COALESCE((SELECT percentile_disc(0.90) WITHIN GROUP (ORDER BY n) FROM per_user), 0)::bigint         AS secrets_per_user_p90,
+    COALESCE((SELECT percentile_disc(0.95) WITHIN GROUP (ORDER BY n) FROM per_user), 0)::bigint         AS secrets_per_user_p95,
+    COALESCE((SELECT percentile_disc(0.99) WITHIN GROUP (ORDER BY n) FROM per_user), 0)::bigint         AS secrets_per_user_p99
 FROM user_secrets
 `
 
 type GetUserSecretsTelemetrySummaryRow struct {
-	UsersWithSecrets int64 `db:"users_with_secrets" json:"users_with_secrets"`
-	EnvNameOnly      int64 `db:"env_name_only" json:"env_name_only"`
-	FilePathOnly     int64 `db:"file_path_only" json:"file_path_only"`
-	Both             int64 `db:"both" json:"both"`
-	Neither          int64 `db:"neither" json:"neither"`
+	UsersWithSecrets  int64 `db:"users_with_secrets" json:"users_with_secrets"`
+	TotalSecrets      int64 `db:"total_secrets" json:"total_secrets"`
+	EnvNameOnly       int64 `db:"env_name_only" json:"env_name_only"`
+	FilePathOnly      int64 `db:"file_path_only" json:"file_path_only"`
+	Both              int64 `db:"both" json:"both"`
+	Neither           int64 `db:"neither" json:"neither"`
+	SecretsPerUserMax int64 `db:"secrets_per_user_max" json:"secrets_per_user_max"`
+	SecretsPerUserP25 int64 `db:"secrets_per_user_p25" json:"secrets_per_user_p25"`
+	SecretsPerUserP50 int64 `db:"secrets_per_user_p50" json:"secrets_per_user_p50"`
+	SecretsPerUserP75 int64 `db:"secrets_per_user_p75" json:"secrets_per_user_p75"`
+	SecretsPerUserP90 int64 `db:"secrets_per_user_p90" json:"secrets_per_user_p90"`
+	SecretsPerUserP95 int64 `db:"secrets_per_user_p95" json:"secrets_per_user_p95"`
+	SecretsPerUserP99 int64 `db:"secrets_per_user_p99" json:"secrets_per_user_p99"`
 }
 
-// Returns deployment-wide counts of secrets grouped by which
-// injection fields are populated, used by the telemetry snapshot.
+// Returns deployment-wide aggregates for the telemetry snapshot.
+// Counts of secrets grouped by which injection fields are populated,
+// and the distribution of secrets per user computed across users
+// with at least one secret. Percentiles use percentile_disc so they
+// return an integer count from the underlying values rather than
+// interpolating between rows.
 func (q *sqlQuerier) GetUserSecretsTelemetrySummary(ctx context.Context) (GetUserSecretsTelemetrySummaryRow, error) {
 	row := q.db.QueryRowContext(ctx, getUserSecretsTelemetrySummary)
 	var i GetUserSecretsTelemetrySummaryRow
 	err := row.Scan(
 		&i.UsersWithSecrets,
+		&i.TotalSecrets,
 		&i.EnvNameOnly,
 		&i.FilePathOnly,
 		&i.Both,
 		&i.Neither,
+		&i.SecretsPerUserMax,
+		&i.SecretsPerUserP25,
+		&i.SecretsPerUserP50,
+		&i.SecretsPerUserP75,
+		&i.SecretsPerUserP90,
+		&i.SecretsPerUserP95,
+		&i.SecretsPerUserP99,
 	)
 	return i, err
 }

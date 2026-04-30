@@ -2864,14 +2864,6 @@ func (m queryMetricsStore) GetUserSecretByUserIDAndName(ctx context.Context, arg
 	return r0, r1
 }
 
-func (m queryMetricsStore) GetUserSecretsCountPerUserForTelemetry(ctx context.Context) ([]database.GetUserSecretsCountPerUserForTelemetryRow, error) {
-	start := time.Now()
-	r0, r1 := m.s.GetUserSecretsCountPerUserForTelemetry(ctx)
-	m.queryLatencies.WithLabelValues("GetUserSecretsCountPerUserForTelemetry").Observe(time.Since(start).Seconds())
-	m.queryCounts.WithLabelValues(httpmw.ExtractHTTPRoute(ctx), httpmw.ExtractHTTPMethod(ctx), "GetUserSecretsCountPerUserForTelemetry").Inc()
-	return r0, r1
-}
-
 func (m queryMetricsStore) GetUserSecretsTelemetrySummary(ctx context.Context) (database.GetUserSecretsTelemetrySummaryRow, error) {
 	start := time.Now()
 	r0, r1 := m.s.GetUserSecretsTelemetrySummary(ctx)

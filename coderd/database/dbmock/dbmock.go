@@ -5356,21 +5356,6 @@ func (mr *MockStoreMockRecorder) GetUserSecretByUserIDAndName(ctx, arg any) *gom
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetUserSecretByUserIDAndName", reflect.TypeOf((*MockStore)(nil).GetUserSecretByUserIDAndName), ctx, arg)
 }
 
-// GetUserSecretsCountPerUserForTelemetry mocks base method.
-func (m *MockStore) GetUserSecretsCountPerUserForTelemetry(ctx context.Context) ([]database.GetUserSecretsCountPerUserForTelemetryRow, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetUserSecretsCountPerUserForTelemetry", ctx)
-	ret0, _ := ret[0].([]database.GetUserSecretsCountPerUserForTelemetryRow)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// GetUserSecretsCountPerUserForTelemetry indicates an expected call of GetUserSecretsCountPerUserForTelemetry.
-func (mr *MockStoreMockRecorder) GetUserSecretsCountPerUserForTelemetry(ctx any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetUserSecretsCountPerUserForTelemetry", reflect.TypeOf((*MockStore)(nil).GetUserSecretsCountPerUserForTelemetry), ctx)
-}
-
 // GetUserSecretsTelemetrySummary mocks base method.
 func (m *MockStore) GetUserSecretsTelemetrySummary(ctx context.Context) (database.GetUserSecretsTelemetrySummaryRow, error) {
 	m.ctrl.T.Helper()
