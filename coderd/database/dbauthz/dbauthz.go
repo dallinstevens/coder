@@ -4395,8 +4395,7 @@ func (q *querier) GetUserSecretsTelemetrySummary(ctx context.Context) (database.
 	// Telemetry queries are called from system contexts only. The
 	// query reads aggregate counts across all users' secrets, so
 	// authorize against the resource type rather than a per-user
-	// owner, matching the existing system-context pattern on
-	// ListUserSecretsWithValues.
+	// owner.
 	if err := q.authorizeContext(ctx, policy.ActionRead, rbac.ResourceUserSecret); err != nil {
 		return database.GetUserSecretsTelemetrySummaryRow{}, err
 	}
