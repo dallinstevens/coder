@@ -230,24 +230,6 @@ const buildUserMessage = ({
 	content: [...(text ? [buildTextPart(text)] : []), ...files],
 });
 
-const buildVisibleClearBoundary = ({
-	id,
-	afterMessageID,
-	createdAt = "2026-03-10T00:01:00.000Z",
-}: {
-	id: number;
-	afterMessageID?: number;
-	createdAt?: string;
-}): TypesGen.ChatContextBoundary => ({
-	id,
-	chat_id: baseMessage.chat_id,
-	kind: "clear",
-	...(afterMessageID === undefined ? {} : { after_message_id: afterMessageID }),
-	visible: true,
-	created_at: createdAt,
-	metadata: {},
-});
-
 const buildStoryArgs = (...messages: TypesGen.ChatMessage[]) => ({
 	...defaultArgs,
 	parsedMessages: buildMessages(messages),
@@ -289,7 +271,6 @@ const defaultArgs: Omit<
 	"parsedMessages"
 > = {
 	subagentTitles: new Map(),
-	contextBoundaries: [],
 };
 
 const meta: Meta<typeof ConversationTimeline> = {
@@ -345,34 +326,6 @@ export const UserMessageWithSingleImage: Story = {
 		const canvas = within(canvasElement);
 		const images = canvas.getAllByRole("img", { name: "Attached image" });
 		expect(images).toHaveLength(1);
-	},
-};
-
-export const ClearBoundaryDivider: Story = {
-	args: (() => {
-		const firstMessage = buildUserMessage({
-			id: 1,
-			text: "What changed before the reset?",
-		});
-		const secondMessage: TypesGen.ChatMessage = {
-			...baseMessage,
-			id: 3,
-			role: "assistant",
-			content: [
-				buildTextPart("Only messages after the divider are in context."),
-			],
-		};
-		return {
-			...defaultArgs,
-			contextBoundaries: [
-				buildVisibleClearBoundary({ id: 3, afterMessageID: 1 }),
-			],
-			parsedMessages: buildMessages([firstMessage, secondMessage]),
-		};
-	})(),
-	play: async ({ canvasElement }) => {
-		const canvas = within(canvasElement);
-		expect(canvas.getByText("Context cleared")).toBeInTheDocument();
 	},
 };
 

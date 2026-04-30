@@ -10111,18 +10111,6 @@ func TestGetChatMessagesForPromptByChatID(t *testing.T) {
 		return results[0]
 	}
 
-	insertCompactionBoundary := func(t *testing.T, chatID uuid.UUID, summaryID int64) {
-		t.Helper()
-		_, err := db.InsertChatContextBoundary(ctx, database.InsertChatContextBoundaryParams{
-			ChatID:           chatID,
-			Kind:             string(codersdk.ChatContextBoundaryKindCompact),
-			AfterMessageID:   sql.NullInt64{Int64: summaryID, Valid: true},
-			SummaryMessageID: sql.NullInt64{Int64: summaryID, Valid: true},
-			Visible:          false,
-		})
-		require.NoError(t, err)
-	}
-
 	msgIDs := func(msgs []database.ChatMessage) []int64 {
 		ids := make([]int64, len(msgs))
 		for i, m := range msgs {
@@ -10175,7 +10163,6 @@ func TestGetChatMessagesForPromptByChatID(t *testing.T) {
 		// Compaction messages:
 		// 1. Summary (role=user, visibility=model, compressed=true).
 		summary := insertMsg(t, chat.ID, database.ChatMessageRoleUser, database.ChatMessageVisibilityModel, true, "compaction summary")
-		insertCompactionBoundary(t, chat.ID, summary.ID)
 		// 2. Compressed assistant tool-call (visibility=user).
 		insertMsg(t, chat.ID, database.ChatMessageRoleAssistant, database.ChatMessageVisibilityUser, true, "tool call")
 		// 3. Compressed tool result (visibility=both).
@@ -10204,6 +10191,67 @@ func TestGetChatMessagesForPromptByChatID(t *testing.T) {
 		require.Equal(t, []int64{sys.ID, summary.ID, postUser.ID, postAsst.ID}, gotIDs)
 	})
 
+	t.Run("ManualClearMarker", func(t *testing.T) {
+		t.Parallel()
+		chat := newChat(t)
+
+		sys := insertMsg(t, chat.ID, database.ChatMessageRoleSystem, database.ChatMessageVisibilityModel, false, "system prompt")
+		preUser := insertMsg(t, chat.ID, database.ChatMessageRoleUser, database.ChatMessageVisibilityBoth, false, "old question")
+		preAsst := insertMsg(t, chat.ID, database.ChatMessageRoleAssistant, database.ChatMessageVisibilityBoth, false, "old answer")
+		marker := insertMsg(t, chat.ID, database.ChatMessageRoleUser, database.ChatMessageVisibilityModel, true, "clear marker")
+		postUser := insertMsg(t, chat.ID, database.ChatMessageRoleUser, database.ChatMessageVisibilityBoth, false, "new question")
+
+		got, err := db.GetChatMessagesForPromptByChatID(ctx, chat.ID)
+		require.NoError(t, err)
+
+		gotIDs := msgIDs(got)
+		require.Equal(t, []int64{sys.ID, marker.ID, postUser.ID}, gotIDs)
+		require.NotContains(t, gotIDs, preUser.ID)
+		require.NotContains(t, gotIDs, preAsst.ID)
+	})
+
+	t.Run("ClearAfterCompaction", func(t *testing.T) {
+		t.Parallel()
+		chat := newChat(t)
+
+		sys := insertMsg(t, chat.ID, database.ChatMessageRoleSystem, database.ChatMessageVisibilityModel, false, "system prompt")
+		preUser := insertMsg(t, chat.ID, database.ChatMessageRoleUser, database.ChatMessageVisibilityBoth, false, "old question")
+		summary := insertMsg(t, chat.ID, database.ChatMessageRoleUser, database.ChatMessageVisibilityModel, true, "compaction summary")
+		between := insertMsg(t, chat.ID, database.ChatMessageRoleUser, database.ChatMessageVisibilityBoth, false, "between")
+		clearMarker := insertMsg(t, chat.ID, database.ChatMessageRoleUser, database.ChatMessageVisibilityModel, true, "clear marker")
+		postUser := insertMsg(t, chat.ID, database.ChatMessageRoleUser, database.ChatMessageVisibilityBoth, false, "new question")
+
+		got, err := db.GetChatMessagesForPromptByChatID(ctx, chat.ID)
+		require.NoError(t, err)
+
+		gotIDs := msgIDs(got)
+		require.Equal(t, []int64{sys.ID, clearMarker.ID, postUser.ID}, gotIDs)
+		require.NotContains(t, gotIDs, preUser.ID)
+		require.NotContains(t, gotIDs, summary.ID)
+		require.NotContains(t, gotIDs, between.ID)
+	})
+
+	t.Run("CompactionAfterClear", func(t *testing.T) {
+		t.Parallel()
+		chat := newChat(t)
+
+		sys := insertMsg(t, chat.ID, database.ChatMessageRoleSystem, database.ChatMessageVisibilityModel, false, "system prompt")
+		preUser := insertMsg(t, chat.ID, database.ChatMessageRoleUser, database.ChatMessageVisibilityBoth, false, "old question")
+		clearMarker := insertMsg(t, chat.ID, database.ChatMessageRoleUser, database.ChatMessageVisibilityModel, true, "clear marker")
+		between := insertMsg(t, chat.ID, database.ChatMessageRoleUser, database.ChatMessageVisibilityBoth, false, "between")
+		summary := insertMsg(t, chat.ID, database.ChatMessageRoleUser, database.ChatMessageVisibilityModel, true, "compaction summary")
+		postUser := insertMsg(t, chat.ID, database.ChatMessageRoleUser, database.ChatMessageVisibilityBoth, false, "new question")
+
+		got, err := db.GetChatMessagesForPromptByChatID(ctx, chat.ID)
+		require.NoError(t, err)
+
+		gotIDs := msgIDs(got)
+		require.Equal(t, []int64{sys.ID, summary.ID, postUser.ID}, gotIDs)
+		require.NotContains(t, gotIDs, preUser.ID)
+		require.NotContains(t, gotIDs, clearMarker.ID)
+		require.NotContains(t, gotIDs, between.ID)
+	})
+
 	t.Run("AfterCompactionSummaryIsUserRole", func(t *testing.T) {
 		t.Parallel()
 		chat := newChat(t)
@@ -10213,7 +10261,6 @@ func TestGetChatMessagesForPromptByChatID(t *testing.T) {
 		// non-system message in the prompt.
 		insertMsg(t, chat.ID, database.ChatMessageRoleSystem, database.ChatMessageVisibilityModel, false, "system prompt")
 		summary := insertMsg(t, chat.ID, database.ChatMessageRoleUser, database.ChatMessageVisibilityModel, true, "summary text")
-		insertCompactionBoundary(t, chat.ID, summary.ID)
 		newUsr := insertMsg(t, chat.ID, database.ChatMessageRoleUser, database.ChatMessageVisibilityBoth, false, "new question")
 
 		got, err := db.GetChatMessagesForPromptByChatID(ctx, chat.ID)
@@ -10242,7 +10289,6 @@ func TestGetChatMessagesForPromptByChatID(t *testing.T) {
 		// instead of the actual summary.
 		insertMsg(t, chat.ID, database.ChatMessageRoleSystem, database.ChatMessageVisibilityModel, false, "system prompt")
 		summary := insertMsg(t, chat.ID, database.ChatMessageRoleUser, database.ChatMessageVisibilityModel, true, "real summary")
-		insertCompactionBoundary(t, chat.ID, summary.ID)
 		compressedTool := insertMsg(t, chat.ID, database.ChatMessageRoleTool, database.ChatMessageVisibilityBoth, true, "tool result")
 		postUser := insertMsg(t, chat.ID, database.ChatMessageRoleUser, database.ChatMessageVisibilityBoth, false, "follow-up")
 

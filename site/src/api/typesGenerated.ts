@@ -1335,31 +1335,6 @@ export interface ChatConfig {
 }
 
 // From codersdk/chats.go
-/**
- * ChatContextBoundary stores a cutoff used during model context assembly.
- */
-export interface ChatContextBoundary {
-	readonly id: number;
-	readonly chat_id: string;
-	readonly kind: ChatContextBoundaryKind;
-	readonly after_message_id?: number;
-	readonly summary_message_id?: number;
-	readonly visible: boolean;
-	readonly created_by?: string;
-	readonly created_at: string;
-	// empty interface{} type, falling back to unknown
-	readonly metadata: Record<string, unknown>;
-}
-
-// From codersdk/chats.go
-export type ChatContextBoundaryKind = "clear" | "compact";
-
-export const ChatContextBoundaryKinds: ChatContextBoundaryKind[] = [
-	"clear",
-	"compact",
-];
-
-// From codersdk/chats.go
 export interface ChatContextFilePart {
 	readonly type: "context-file";
 	/**
@@ -1903,7 +1878,6 @@ export interface ChatMessagesPaginationOptions {
 export interface ChatMessagesResponse {
 	readonly messages: readonly ChatMessage[];
 	readonly queued_messages: readonly ChatQueuedMessage[];
-	readonly context_boundaries?: readonly ChatContextBoundary[];
 	readonly has_more: boolean;
 }
 
@@ -2277,14 +2251,6 @@ export interface ChatStreamActionRequired {
 
 // From codersdk/chats.go
 /**
- * ChatStreamContextBoundary is the payload of a context_boundary stream event.
- */
-export interface ChatStreamContextBoundary {
-	readonly boundary: ChatContextBoundary;
-}
-
-// From codersdk/chats.go
-/**
  * ChatStreamError represents an error event in the stream.
  */
 export interface ChatStreamError {
@@ -2329,13 +2295,11 @@ export interface ChatStreamEvent {
 	readonly retry?: ChatStreamRetry;
 	readonly queued_messages?: readonly ChatQueuedMessage[];
 	readonly action_required?: ChatStreamActionRequired;
-	readonly context_boundary?: ChatStreamContextBoundary;
 }
 
 // From codersdk/chats.go
 export type ChatStreamEventType =
 	| "action_required"
-	| "context_boundary"
 	| "error"
 	| "message"
 	| "message_part"
@@ -2345,7 +2309,6 @@ export type ChatStreamEventType =
 
 export const ChatStreamEventTypes: ChatStreamEventType[] = [
 	"action_required",
-	"context_boundary",
 	"error",
 	"message",
 	"message_part",
@@ -6393,6 +6356,7 @@ export type ResourceType =
 	| "template"
 	| "template_version"
 	| "user"
+	| "user_secret"
 	| "workspace"
 	| "workspace_agent"
 	| "workspace_app"
@@ -6423,6 +6387,7 @@ export const ResourceTypes: ResourceType[] = [
 	"template",
 	"template_version",
 	"user",
+	"user_secret",
 	"workspace",
 	"workspace_agent",
 	"workspace_app",

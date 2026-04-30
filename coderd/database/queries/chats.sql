@@ -266,6 +266,10 @@ WHERE
         WHEN @before_id::bigint > 0 THEN id < @before_id::bigint
         ELSE true
     END
+    AND CASE
+        WHEN @after_id::bigint > 0 THEN id > @after_id::bigint
+        ELSE true
+    END
     AND visibility IN ('user', 'both')
     AND deleted = false
 ORDER BY
@@ -273,106 +277,63 @@ ORDER BY
 LIMIT
     COALESCE(NULLIF(@limit_val::int, 0), 50);
 
--- name: InsertChatContextBoundary :one
-INSERT INTO chat_context_boundaries (
-    chat_id,
-    kind,
-    after_message_id,
-    summary_message_id,
-    visible,
-    created_by,
-    created_at,
-    metadata
-) VALUES (
-    @chat_id::uuid,
-    @kind::text,
-    sqlc.narg('after_message_id')::bigint,
-    sqlc.narg('summary_message_id')::bigint,
-    @visible::boolean,
-    sqlc.narg('created_by')::uuid,
-    COALESCE(sqlc.narg('created_at')::timestamptz, now()),
-    COALESCE(sqlc.narg('metadata')::jsonb, '{}'::jsonb)
-)
-RETURNING
-    *;
-
--- name: GetMaxChatMessageIDByChatID :one
-SELECT
-    COALESCE(MAX(id), 0)::bigint
-FROM
-    chat_messages
-WHERE
-    chat_id = @chat_id::uuid;
-
--- name: GetLatestChatContextBoundaryByChatID :one
-SELECT
-    *
-FROM
-    chat_context_boundaries
-WHERE
-    chat_id = @chat_id::uuid
-ORDER BY
-    id DESC
-LIMIT
-    1;
-
--- name: GetVisibleChatContextBoundariesByChatIDPaginated :many
-SELECT
-    *
-FROM
-    chat_context_boundaries
-WHERE
-    chat_id = @chat_id::uuid
-    AND visible = true
-    AND CASE
-        WHEN @before_id::bigint > 0 THEN id < @before_id::bigint
-        ELSE true
-    END
-ORDER BY
-    id ASC;
-
 -- name: GetChatMessagesForPromptByChatID :many
-WITH latest_boundary AS (
+WITH latest_compressed_summary AS (
     SELECT
-        *
+        id
     FROM
-        chat_context_boundaries
+        chat_messages
     WHERE
         chat_id = @chat_id::uuid
+        AND compressed = TRUE
+        AND deleted = false
+        AND visibility = 'model'
     ORDER BY
+        created_at DESC,
         id DESC
     LIMIT
         1
 )
 SELECT
-    chat_messages.*
+    *
 FROM
     chat_messages
-LEFT JOIN
-    latest_boundary ON true
 WHERE
-    chat_messages.chat_id = @chat_id::uuid
-    AND chat_messages.visibility IN ('model', 'both')
-    AND chat_messages.deleted = false
+    chat_id = @chat_id::uuid
+    AND visibility IN ('model', 'both')
+    AND deleted = false
     AND (
         (
-            chat_messages.role = 'system'
-            AND chat_messages.compressed = false
+            role = 'system'
+            AND compressed = FALSE
         )
         OR (
-            latest_boundary.summary_message_id IS NOT NULL
-            AND chat_messages.id = latest_boundary.summary_message_id
-        )
-        OR (
-            chat_messages.compressed = false
+            compressed = FALSE
             AND (
-                latest_boundary.id IS NULL
-                OR chat_messages.id > COALESCE(latest_boundary.after_message_id, 0)
+                NOT EXISTS (
+                    SELECT
+                        1
+                    FROM
+                        latest_compressed_summary
+                )
+                OR id > (
+                    SELECT
+                        id
+                    FROM
+                        latest_compressed_summary
+                )
             )
+        )
+        OR id = (
+            SELECT
+                id
+            FROM
+                latest_compressed_summary
         )
     )
 ORDER BY
-    chat_messages.id ASC;
+    created_at ASC,
+    id ASC;
 
 -- name: GetChats :many
 SELECT
@@ -531,62 +492,48 @@ WITH updated_chat AS (
             ORDER BY ord DESC
             LIMIT 1
         )
-), inserted_messages AS (
-    INSERT INTO chat_messages (
-        chat_id,
-        created_by,
-        model_config_id,
-        role,
-        content,
-        content_version,
-        visibility,
-        input_tokens,
-        output_tokens,
-        total_tokens,
-        reasoning_tokens,
-        cache_creation_tokens,
-        cache_read_tokens,
-        context_limit,
-        compressed,
-        total_cost_micros,
-        runtime_ms,
-        provider_response_id
-    )
-    SELECT
-        @chat_id::uuid,
-        NULLIF(UNNEST(@created_by::uuid[]), '00000000-0000-0000-0000-000000000000'::uuid),
-        NULLIF(UNNEST(@model_config_id::uuid[]), '00000000-0000-0000-0000-000000000000'::uuid),
-        UNNEST(@role::chat_message_role[]),
-        UNNEST(@content::text[])::jsonb,
-        UNNEST(@content_version::smallint[]),
-        UNNEST(@visibility::chat_message_visibility[]),
-        NULLIF(UNNEST(@input_tokens::bigint[]), 0),
-        NULLIF(UNNEST(@output_tokens::bigint[]), 0),
-        NULLIF(UNNEST(@total_tokens::bigint[]), 0),
-        NULLIF(UNNEST(@reasoning_tokens::bigint[]), 0),
-        NULLIF(UNNEST(@cache_creation_tokens::bigint[]), 0),
-        NULLIF(UNNEST(@cache_read_tokens::bigint[]), 0),
-        NULLIF(UNNEST(@context_limit::bigint[]), 0),
-        UNNEST(@compressed::boolean[]),
-        NULLIF(UNNEST(@total_cost_micros::bigint[]), 0),
-        NULLIF(UNNEST(@runtime_ms::bigint[]), 0),
-        NULLIF(UNNEST(@provider_response_id::text[]), '')
-    RETURNING
-        *
-), chat_messages AS (
-    -- This CTE intentionally shadows the table name so sqlc keeps returning
-    -- ChatMessage while PostgreSQL reads the rows from inserted_messages.
-    SELECT
-        inserted_messages.*
-    FROM
-        inserted_messages
+)
+INSERT INTO chat_messages (
+    chat_id,
+    created_by,
+    model_config_id,
+    role,
+    content,
+    content_version,
+    visibility,
+    input_tokens,
+    output_tokens,
+    total_tokens,
+    reasoning_tokens,
+    cache_creation_tokens,
+    cache_read_tokens,
+    context_limit,
+    compressed,
+    total_cost_micros,
+    runtime_ms,
+    provider_response_id
 )
 SELECT
-    chat_messages.*
-FROM
-    chat_messages
-ORDER BY
-    chat_messages.id ASC;
+    @chat_id::uuid,
+    NULLIF(UNNEST(@created_by::uuid[]), '00000000-0000-0000-0000-000000000000'::uuid),
+    NULLIF(UNNEST(@model_config_id::uuid[]), '00000000-0000-0000-0000-000000000000'::uuid),
+    UNNEST(@role::chat_message_role[]),
+    UNNEST(@content::text[])::jsonb,
+    UNNEST(@content_version::smallint[]),
+    UNNEST(@visibility::chat_message_visibility[]),
+    NULLIF(UNNEST(@input_tokens::bigint[]), 0),
+    NULLIF(UNNEST(@output_tokens::bigint[]), 0),
+    NULLIF(UNNEST(@total_tokens::bigint[]), 0),
+    NULLIF(UNNEST(@reasoning_tokens::bigint[]), 0),
+    NULLIF(UNNEST(@cache_creation_tokens::bigint[]), 0),
+    NULLIF(UNNEST(@cache_read_tokens::bigint[]), 0),
+    NULLIF(UNNEST(@context_limit::bigint[]), 0),
+    UNNEST(@compressed::boolean[]),
+    NULLIF(UNNEST(@total_cost_micros::bigint[]), 0),
+    NULLIF(UNNEST(@runtime_ms::bigint[]), 0),
+    NULLIF(UNNEST(@provider_response_id::text[]), '')
+RETURNING
+    *;
 
 -- name: UpdateChatMessageByID :one
 UPDATE
@@ -1539,4 +1486,6 @@ SELECT
     )::timestamptz AS last_activity_at
 FROM archived a
 LEFT JOIN to_archive t ON t.id = a.id
+-- created_at ASC flows through to dbpurge's digest truncation; see
+-- buildDigestData in dbpurge.go for the tradeoff rationale.
 ORDER BY (a.root_chat_id IS NULL) DESC, a.owner_id ASC, a.created_at ASC, a.id ASC;

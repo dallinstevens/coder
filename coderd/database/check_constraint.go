@@ -7,8 +7,6 @@ type CheckConstraint string
 // CheckConstraint enums.
 const (
 	CheckAPIKeysAllowListNotEmpty                    CheckConstraint = "api_keys_allow_list_not_empty"                      // api_keys
-	CheckChatContextBoundariesCheck                  CheckConstraint = "chat_context_boundaries_check"                      // chat_context_boundaries
-	CheckChatContextBoundariesKindCheck              CheckConstraint = "chat_context_boundaries_kind_check"                 // chat_context_boundaries
 	CheckChatModelConfigsCompressionThresholdCheck   CheckConstraint = "chat_model_configs_compression_threshold_check"     // chat_model_configs
 	CheckChatModelConfigsContextLimitCheck           CheckConstraint = "chat_model_configs_context_limit_check"             // chat_model_configs
 	CheckChatProvidersProviderCheck                  CheckConstraint = "chat_providers_provider_check"                      // chat_providers

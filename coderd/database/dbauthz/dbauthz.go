@@ -3278,14 +3278,6 @@ func (q *querier) GetLastUpdateCheck(ctx context.Context) (string, error) {
 	return q.db.GetLastUpdateCheck(ctx)
 }
 
-func (q *querier) GetLatestChatContextBoundaryByChatID(ctx context.Context, chatID uuid.UUID) (database.ChatContextBoundary, error) {
-	_, err := q.GetChatByID(ctx, chatID)
-	if err != nil {
-		return database.ChatContextBoundary{}, err
-	}
-	return q.db.GetLatestChatContextBoundaryByChatID(ctx, chatID)
-}
-
 func (q *querier) GetLatestCryptoKeyByFeature(ctx context.Context, feature database.CryptoKeyFeature) (database.CryptoKey, error) {
 	if err := q.authorizeContext(ctx, policy.ActionRead, rbac.ResourceCryptoKey); err != nil {
 		return database.CryptoKey{}, err
@@ -3395,14 +3387,6 @@ func (q *querier) GetMCPServerUserTokensByUserID(ctx context.Context, userID uui
 		return nil, err
 	}
 	return q.db.GetMCPServerUserTokensByUserID(ctx, userID)
-}
-
-func (q *querier) GetMaxChatMessageIDByChatID(ctx context.Context, chatID uuid.UUID) (int64, error) {
-	_, err := q.GetChatByID(ctx, chatID)
-	if err != nil {
-		return 0, err
-	}
-	return q.db.GetMaxChatMessageIDByChatID(ctx, chatID)
 }
 
 func (q *querier) GetNotificationMessagesByStatus(ctx context.Context, arg database.GetNotificationMessagesByStatusParams) ([]database.NotificationMessage, error) {
@@ -4489,14 +4473,6 @@ func (q *querier) GetUsersByIDs(ctx context.Context, ids []uuid.UUID) ([]databas
 	return q.db.GetUsersByIDs(ctx, ids)
 }
 
-func (q *querier) GetVisibleChatContextBoundariesByChatIDPaginated(ctx context.Context, arg database.GetVisibleChatContextBoundariesByChatIDPaginatedParams) ([]database.ChatContextBoundary, error) {
-	_, err := q.GetChatByID(ctx, arg.ChatID)
-	if err != nil {
-		return nil, err
-	}
-	return q.db.GetVisibleChatContextBoundariesByChatIDPaginated(ctx, arg)
-}
-
 func (q *querier) GetWebpushSubscriptionsByUserID(ctx context.Context, userID uuid.UUID) ([]database.WebpushSubscription, error) {
 	if err := q.authorizeContext(ctx, policy.ActionRead, rbac.ResourceWebpushSubscription.WithOwner(userID.String())); err != nil {
 		return nil, err
@@ -5085,17 +5061,6 @@ func (q *querier) InsertAuditLog(ctx context.Context, arg database.InsertAuditLo
 
 func (q *querier) InsertChat(ctx context.Context, arg database.InsertChatParams) (database.Chat, error) {
 	return insert(q.log, q.auth, rbac.ResourceChat.WithOwner(arg.OwnerID.String()).InOrg(arg.OrganizationID), q.db.InsertChat)(ctx, arg)
-}
-
-func (q *querier) InsertChatContextBoundary(ctx context.Context, arg database.InsertChatContextBoundaryParams) (database.ChatContextBoundary, error) {
-	chat, err := q.db.GetChatByID(ctx, arg.ChatID)
-	if err != nil {
-		return database.ChatContextBoundary{}, err
-	}
-	if err := q.authorizeContext(ctx, policy.ActionUpdate, chat); err != nil {
-		return database.ChatContextBoundary{}, err
-	}
-	return q.db.InsertChatContextBoundary(ctx, arg)
 }
 
 func (q *querier) InsertChatDebugRun(ctx context.Context, arg database.InsertChatDebugRunParams) (database.ChatDebugRun, error) {

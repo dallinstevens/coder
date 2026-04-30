@@ -508,33 +508,11 @@ type UploadChatFileResponse struct {
 	ID uuid.UUID `json:"id" format:"uuid"`
 }
 
-// ChatContextBoundaryKind identifies why a chat context boundary exists.
-type ChatContextBoundaryKind string
-
-const (
-	ChatContextBoundaryKindClear   ChatContextBoundaryKind = "clear"
-	ChatContextBoundaryKindCompact ChatContextBoundaryKind = "compact"
-)
-
-// ChatContextBoundary stores a cutoff used during model context assembly.
-type ChatContextBoundary struct {
-	ID               int64                   `json:"id"`
-	ChatID           uuid.UUID               `json:"chat_id" format:"uuid"`
-	Kind             ChatContextBoundaryKind `json:"kind"`
-	AfterMessageID   *int64                  `json:"after_message_id,omitempty"`
-	SummaryMessageID *int64                  `json:"summary_message_id,omitempty"`
-	Visible          bool                    `json:"visible"`
-	CreatedBy        *uuid.UUID              `json:"created_by,omitempty" format:"uuid"`
-	CreatedAt        time.Time               `json:"created_at" format:"date-time"`
-	Metadata         map[string]any          `json:"metadata"`
-}
-
 // ChatMessagesResponse contains messages and queued messages for a chat.
 type ChatMessagesResponse struct {
-	Messages          []ChatMessage         `json:"messages"`
-	QueuedMessages    []ChatQueuedMessage   `json:"queued_messages"`
-	ContextBoundaries []ChatContextBoundary `json:"context_boundaries,omitempty"`
-	HasMore           bool                  `json:"has_more"`
+	Messages       []ChatMessage       `json:"messages"`
+	QueuedMessages []ChatQueuedMessage `json:"queued_messages"`
+	HasMore        bool                `json:"has_more"`
 }
 
 // ChatModelProviderUnavailableReason explains why a provider cannot be used.
@@ -1285,20 +1263,14 @@ func IsChatGitWatchFallbackMessage(msg string) bool {
 type ChatStreamEventType string
 
 const (
-	ChatStreamEventTypeMessagePart     ChatStreamEventType = "message_part"
-	ChatStreamEventTypeMessage         ChatStreamEventType = "message"
-	ChatStreamEventTypeStatus          ChatStreamEventType = "status"
-	ChatStreamEventTypeError           ChatStreamEventType = "error"
-	ChatStreamEventTypeQueueUpdate     ChatStreamEventType = "queue_update"
-	ChatStreamEventTypeRetry           ChatStreamEventType = "retry"
-	ChatStreamEventTypeActionRequired  ChatStreamEventType = "action_required"
-	ChatStreamEventTypeContextBoundary ChatStreamEventType = "context_boundary"
+	ChatStreamEventTypeMessagePart    ChatStreamEventType = "message_part"
+	ChatStreamEventTypeMessage        ChatStreamEventType = "message"
+	ChatStreamEventTypeStatus         ChatStreamEventType = "status"
+	ChatStreamEventTypeError          ChatStreamEventType = "error"
+	ChatStreamEventTypeQueueUpdate    ChatStreamEventType = "queue_update"
+	ChatStreamEventTypeRetry          ChatStreamEventType = "retry"
+	ChatStreamEventTypeActionRequired ChatStreamEventType = "action_required"
 )
-
-// ChatStreamContextBoundary is the payload of a context_boundary stream event.
-type ChatStreamContextBoundary struct {
-	Boundary ChatContextBoundary `json:"boundary"`
-}
 
 // ChatQueuedMessage represents a queued message waiting to be processed.
 type ChatQueuedMessage struct {
@@ -1464,16 +1436,15 @@ type ChatWatchEvent struct {
 
 // ChatStreamEvent represents a real-time update for chat streaming.
 type ChatStreamEvent struct {
-	Type            ChatStreamEventType        `json:"type"`
-	ChatID          uuid.UUID                  `json:"chat_id" format:"uuid"`
-	Message         *ChatMessage               `json:"message,omitempty"`
-	MessagePart     *ChatStreamMessagePart     `json:"message_part,omitempty"`
-	Status          *ChatStreamStatus          `json:"status,omitempty"`
-	Error           *ChatStreamError           `json:"error,omitempty"`
-	Retry           *ChatStreamRetry           `json:"retry,omitempty"`
-	QueuedMessages  []ChatQueuedMessage        `json:"queued_messages,omitempty"`
-	ActionRequired  *ChatStreamActionRequired  `json:"action_required,omitempty"`
-	ContextBoundary *ChatStreamContextBoundary `json:"context_boundary,omitempty"`
+	Type           ChatStreamEventType       `json:"type"`
+	ChatID         uuid.UUID                 `json:"chat_id" format:"uuid"`
+	Message        *ChatMessage              `json:"message,omitempty"`
+	MessagePart    *ChatStreamMessagePart    `json:"message_part,omitempty"`
+	Status         *ChatStreamStatus         `json:"status,omitempty"`
+	Error          *ChatStreamError          `json:"error,omitempty"`
+	Retry          *ChatStreamRetry          `json:"retry,omitempty"`
+	QueuedMessages []ChatQueuedMessage       `json:"queued_messages,omitempty"`
+	ActionRequired *ChatStreamActionRequired `json:"action_required,omitempty"`
 }
 
 // ChatCostSummaryOptions are optional query parameters for GetChatCostSummary.

@@ -42,61 +42,13 @@ export const extractContextUsageFromMessage = (
 	};
 };
 
-type VisibleClearBoundary = TypesGen.ChatContextBoundary & {
-	readonly kind: "clear";
-	readonly visible: true;
-};
-
-const getVisibleClearBoundaries = (
-	contextBoundaries: readonly TypesGen.ChatContextBoundary[] = [],
-): VisibleClearBoundary[] =>
-	contextBoundaries.filter(
-		(boundary): boundary is VisibleClearBoundary =>
-			boundary.kind === "clear" && boundary.visible === true,
-	);
-
-const compareClearBoundaries = (
-	a: VisibleClearBoundary,
-	b: VisibleClearBoundary,
-): number => {
-	const aAfter = a.after_message_id;
-	const bAfter = b.after_message_id;
-	if (aAfter == null && bAfter != null) {
-		return -1;
-	}
-	if (aAfter != null && bAfter == null) {
-		return 1;
-	}
-	if (aAfter != null && bAfter != null && aAfter !== bAfter) {
-		return aAfter - bAfter;
-	}
-	return a.id - b.id;
-};
-
-export const getSortedVisibleClearBoundaries = (
-	contextBoundaries: readonly TypesGen.ChatContextBoundary[] = [],
-): VisibleClearBoundary[] =>
-	getVisibleClearBoundaries(contextBoundaries).sort(compareClearBoundaries);
-
 export const getLatestContextUsage = (
 	messages: readonly TypesGen.ChatMessage[],
-	contextBoundaries: readonly TypesGen.ChatContextBoundary[] = [],
 ): AgentContextUsage | null => {
-	const visibleClearBoundaries =
-		getSortedVisibleClearBoundaries(contextBoundaries);
-	const latestClearAfterMessageID =
-		visibleClearBoundaries.at(-1)?.after_message_id;
-
 	for (let index = messages.length - 1; index >= 0; index -= 1) {
 		const message = messages[index];
 		if (!message) {
 			continue;
-		}
-		if (
-			latestClearAfterMessageID != null &&
-			message.id <= latestClearAfterMessageID
-		) {
-			return null;
 		}
 		const usage = extractContextUsageFromMessage(message);
 		if (usage) {

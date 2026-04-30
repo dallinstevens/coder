@@ -224,6 +224,9 @@ const (
 	ApiKeyScopeChatUpdate                          APIKeyScope = "chat:update"
 	ApiKeyScopeChatDelete                          APIKeyScope = "chat:delete"
 	ApiKeyScopeChat                                APIKeyScope = "chat:*"
+	ApiKeyScopeAiSeat                              APIKeyScope = "ai_seat:*"
+	ApiKeyScopeAiSeatCreate                        APIKeyScope = "ai_seat:create"
+	ApiKeyScopeAiSeatRead                          APIKeyScope = "ai_seat:read"
 )
 
 func (e *APIKeyScope) Scan(src interface{}) error {
@@ -467,7 +470,10 @@ func (e APIKeyScope) Valid() bool {
 		ApiKeyScopeChatRead,
 		ApiKeyScopeChatUpdate,
 		ApiKeyScopeChatDelete,
-		ApiKeyScopeChat:
+		ApiKeyScopeChat,
+		ApiKeyScopeAiSeat,
+		ApiKeyScopeAiSeatCreate,
+		ApiKeyScopeAiSeatRead:
 		return true
 	}
 	return false
@@ -680,6 +686,9 @@ func AllAPIKeyScopeValues() []APIKeyScope {
 		ApiKeyScopeChatUpdate,
 		ApiKeyScopeChatDelete,
 		ApiKeyScopeChat,
+		ApiKeyScopeAiSeat,
+		ApiKeyScopeAiSeatCreate,
+		ApiKeyScopeAiSeatRead,
 	}
 }
 
@@ -3206,6 +3215,7 @@ const (
 	ResourceTypeTask                        ResourceType = "task"
 	ResourceTypeAiSeat                      ResourceType = "ai_seat"
 	ResourceTypeChat                        ResourceType = "chat"
+	ResourceTypeUserSecret                  ResourceType = "user_secret"
 )
 
 func (e *ResourceType) Scan(src interface{}) error {
@@ -3272,7 +3282,8 @@ func (e ResourceType) Valid() bool {
 		ResourceTypePrebuildsSettings,
 		ResourceTypeTask,
 		ResourceTypeAiSeat,
-		ResourceTypeChat:
+		ResourceTypeChat,
+		ResourceTypeUserSecret:
 		return true
 	}
 	return false
@@ -3308,6 +3319,7 @@ func AllResourceTypeValues() []ResourceType {
 		ResourceTypeTask,
 		ResourceTypeAiSeat,
 		ResourceTypeChat,
+		ResourceTypeUserSecret,
 	}
 }
 
@@ -4368,18 +4380,6 @@ type Chat struct {
 	OrganizationID      uuid.UUID             `db:"organization_id" json:"organization_id"`
 	PlanMode            NullChatPlanMode      `db:"plan_mode" json:"plan_mode"`
 	ClientType          ChatClientType        `db:"client_type" json:"client_type"`
-}
-
-type ChatContextBoundary struct {
-	ID               int64           `db:"id" json:"id"`
-	ChatID           uuid.UUID       `db:"chat_id" json:"chat_id"`
-	Kind             string          `db:"kind" json:"kind"`
-	AfterMessageID   sql.NullInt64   `db:"after_message_id" json:"after_message_id"`
-	SummaryMessageID sql.NullInt64   `db:"summary_message_id" json:"summary_message_id"`
-	Visible          bool            `db:"visible" json:"visible"`
-	CreatedBy        uuid.NullUUID   `db:"created_by" json:"created_by"`
-	CreatedAt        time.Time       `db:"created_at" json:"created_at"`
-	Metadata         json.RawMessage `db:"metadata" json:"metadata"`
 }
 
 type ChatDebugRun struct {

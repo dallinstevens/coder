@@ -5724,20 +5724,21 @@ func TestPostChatMessages_ClearCommand(t *testing.T) {
 		require.True(t, resp.CommandResult.Success)
 		require.Empty(t, resp.CommandResult.Message)
 
-		beforeBoundaryCount := len(before.ContextBoundaries)
-
 		after, err := client.GetChatMessages(ctx, chat.ID, nil)
 		require.NoError(t, err)
 		require.Equal(t, before.Messages, after.Messages)
 		require.Equal(t, before.QueuedMessages, after.QueuedMessages)
-		require.NotNil(t, after.ContextBoundaries)
-		require.Len(t, after.ContextBoundaries, beforeBoundaryCount+1)
-		clearBoundary := after.ContextBoundaries[len(after.ContextBoundaries)-1]
-		require.Equal(t, chat.ID, clearBoundary.ChatID)
-		require.Equal(t, codersdk.ChatContextBoundaryKindClear, clearBoundary.Kind)
-		require.True(t, clearBoundary.Visible)
-		require.NotNil(t, clearBoundary.CreatedBy)
-		require.Equal(t, firstUser.UserID, *clearBoundary.CreatedBy)
+
+		promptMessages, err := db.GetChatMessagesForPromptByChatID(dbauthz.AsSystemRestricted(ctx), chat.ID)
+		require.NoError(t, err)
+		require.Len(t, promptMessages, 1)
+		marker := promptMessages[0]
+		require.Equal(t, database.ChatMessageRoleUser, marker.Role)
+		require.Equal(t, database.ChatMessageVisibilityModel, marker.Visibility)
+		require.True(t, marker.Compressed)
+		require.True(t, marker.ModelConfigID.Valid)
+		require.Equal(t, model.ID, marker.ModelConfigID.UUID)
+		require.Contains(t, string(marker.Content.RawMessage), "The user cleared the prior conversation context")
 	})
 
 	t.Run("Validation", func(t *testing.T) {

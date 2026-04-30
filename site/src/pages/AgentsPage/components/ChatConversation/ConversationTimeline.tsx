@@ -45,7 +45,6 @@ import {
 	AttachmentBlock,
 	type PreviewTextAttachment,
 } from "./AttachmentBlocks";
-import { getSortedVisibleClearBoundaries } from "./chatHelpers";
 import { ExpiredFileIdsProvider } from "./ExpiredFileIdsContext";
 import { deriveMessageDisplayState } from "./messageHelpers";
 import { getEditableUserMessagePayload } from "./messageParsing";
@@ -955,16 +954,6 @@ function computeLastInChainFlags(
 	return flags;
 }
 
-const ClearBoundaryDivider: FC = () => (
-	<div className="flex items-center gap-3 px-3 py-2 text-xs text-content-secondary">
-		<div className="h-px flex-1 bg-border-default" />
-		<span className="rounded-full border border-border-default bg-surface-secondary px-2 py-1">
-			Context cleared
-		</span>
-		<div className="h-px flex-1 bg-border-default" />
-	</div>
-);
-
 interface ConversationTimelineProps {
 	parsedMessages: readonly ParsedMessageEntry[];
 	subagentTitles: Map<string, string>;
@@ -982,8 +971,6 @@ interface ConversationTimelineProps {
 	mcpServers?: readonly TypesGen.MCPServerConfig[];
 	showDesktopPreviews?: boolean;
 	isTurnActive?: boolean;
-	// Ordered by ascending boundary ID by AgentChatPage.
-	contextBoundaries: readonly TypesGen.ChatContextBoundary[];
 }
 
 export const ConversationTimeline = memo<ConversationTimelineProps>(
@@ -999,11 +986,10 @@ export const ConversationTimeline = memo<ConversationTimelineProps>(
 		urlTransform,
 		mcpServers,
 		showDesktopPreviews,
-		contextBoundaries,
 	}) => {
 		const lastInChainFlags = computeLastInChainFlags(parsedMessages);
 
-		if (parsedMessages.length === 0 && contextBoundaries.length === 0) {
+		if (parsedMessages.length === 0) {
 			return null;
 		}
 
@@ -1100,40 +1086,7 @@ export const ConversationTimeline = memo<ConversationTimelineProps>(
 			);
 		};
 
-		const clearBoundaries = getSortedVisibleClearBoundaries(contextBoundaries);
-		const timelineNodes: ReactNode[] = [];
-		let nextClearBoundaryIndex = 0;
-		for (let msgIdx = 0; msgIdx < parsedMessages.length; msgIdx += 1) {
-			const entry = parsedMessages[msgIdx];
-			if (!entry) {
-				continue;
-			}
-			while (nextClearBoundaryIndex < clearBoundaries.length) {
-				const clearBoundary = clearBoundaries[nextClearBoundaryIndex];
-				if (!clearBoundary) {
-					break;
-				}
-				const afterMessageID = clearBoundary.after_message_id;
-				if (afterMessageID != null && entry.message.id <= afterMessageID) {
-					break;
-				}
-				timelineNodes.push(
-					<ClearBoundaryDivider key={`clear-boundary-${clearBoundary.id}`} />,
-				);
-				nextClearBoundaryIndex += 1;
-			}
-			timelineNodes.push(renderMessageEntry(entry, msgIdx));
-		}
-		while (nextClearBoundaryIndex < clearBoundaries.length) {
-			const clearBoundary = clearBoundaries[nextClearBoundaryIndex];
-			if (!clearBoundary) {
-				break;
-			}
-			timelineNodes.push(
-				<ClearBoundaryDivider key={`clear-boundary-${clearBoundary.id}`} />,
-			);
-			nextClearBoundaryIndex += 1;
-		}
+		const timelineNodes = parsedMessages.map(renderMessageEntry);
 
 		return (
 			<ExpiredFileIdsProvider>

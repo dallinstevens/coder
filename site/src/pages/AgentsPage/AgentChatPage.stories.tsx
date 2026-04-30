@@ -142,24 +142,6 @@ const baseChatFields = {
 // Helpers
 // ---------------------------------------------------------------------------
 
-const buildVisibleClearBoundary = ({
-	id,
-	afterMessageID,
-	createdAt = "2026-02-18T00:00:01.000Z",
-}: {
-	id: number;
-	afterMessageID?: number;
-	createdAt?: string;
-}): TypesGen.ChatContextBoundary => ({
-	id,
-	chat_id: CHAT_ID,
-	kind: "clear",
-	...(afterMessageID === undefined ? {} : { after_message_id: afterMessageID }),
-	visible: true,
-	created_at: createdAt,
-	metadata: {},
-});
-
 /** A small sample unified diff for stories that show the diff panel. */
 const sampleDiff = `diff --git a/main.go b/main.go
 index abc1234..def5678 100644
@@ -195,15 +177,11 @@ const buildQueries = (
 		...chat,
 		diff_status: diffStatus,
 	};
-	const messagesDataWithBoundaries: TypesGen.ChatMessagesResponse = {
-		...messagesData,
-		context_boundaries: messagesData.context_boundaries ?? [],
-	};
 	return [
 		{ key: chatKey(CHAT_ID), data: chatWithDiffStatus },
 		{
 			key: chatMessagesKey(CHAT_ID),
-			data: { pages: [messagesDataWithBoundaries], pageParams: [undefined] },
+			data: { pages: [messagesData], pageParams: [undefined] },
 		},
 		{ key: chatsKey, data: [chatWithDiffStatus] },
 		{
@@ -681,9 +659,6 @@ export const ClearCommandResult: Story = {
 		const refreshedMessages = {
 			messages: [refreshedMessage],
 			queued_messages: [],
-			context_boundaries: [
-				buildVisibleClearBoundary({ id: 3, afterMessageID: 1 }),
-			],
 			has_more: false,
 		} satisfies TypesGen.ChatMessagesResponse;
 		const createMessageSpy = spyOn(
@@ -723,9 +698,6 @@ export const ClearCommandResult: Story = {
 				CHAT_ID,
 				expect.objectContaining({ limit: 50 }),
 			);
-		});
-		await waitFor(() => {
-			expect(canvas.getByText("Context cleared")).toBeInTheDocument();
 		});
 		expect(canvas.queryByText("/clear")).not.toBeInTheDocument();
 	},
@@ -791,81 +763,6 @@ export const ClearCommandError: Story = {
 		await body.findByText(
 			"Wait for the chat to finish or interrupt it before clearing context.",
 		);
-	},
-};
-
-export const RemoteContextBoundaryEvent: Story = {
-	parameters: {
-		queries: buildQueries(
-			{
-				id: CHAT_ID,
-				...baseChatFields,
-				title: "Remote clear event",
-				status: "completed",
-			},
-			{
-				messages: [
-					{
-						id: 1,
-						chat_id: CHAT_ID,
-						created_at: "2026-02-18T00:00:00.000Z",
-						role: "user",
-						content: [{ type: "text", text: "Visible history" }],
-					},
-				],
-				queued_messages: [],
-				has_more: false,
-			},
-			{ diffUrl: undefined },
-		),
-		webSocket: {
-			"/chats/": [
-				{
-					event: "message",
-					data: JSON.stringify([
-						{
-							type: "context_boundary",
-							chat_id: CHAT_ID,
-							context_boundary: {
-								boundary: buildVisibleClearBoundary({
-									id: 3,
-									afterMessageID: 1,
-								}),
-							},
-						},
-					] satisfies TypesGen.ChatStreamEvent[]),
-				},
-			],
-		},
-	},
-	beforeEach: () => {
-		const message: TypesGen.ChatMessage = {
-			id: 1,
-			chat_id: CHAT_ID,
-			created_at: "2026-02-18T00:00:00.000Z",
-			role: "user",
-			content: [{ type: "text", text: "Visible history" }],
-		};
-		spyOn(API.experimental, "getChatMessages").mockResolvedValue({
-			messages: [message],
-			queued_messages: [],
-			context_boundaries: [
-				buildVisibleClearBoundary({ id: 3, afterMessageID: 1 }),
-			],
-			has_more: false,
-		});
-	},
-	play: async ({ canvasElement }) => {
-		const canvas = within(canvasElement);
-		await waitFor(() => {
-			expect(API.experimental.getChatMessages).toHaveBeenCalledWith(
-				CHAT_ID,
-				expect.objectContaining({ limit: 50 }),
-			);
-		});
-		await waitFor(() => {
-			expect(canvas.getByText("Context cleared")).toBeInTheDocument();
-		});
 	},
 };
 

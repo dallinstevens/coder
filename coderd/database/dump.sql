@@ -220,7 +220,10 @@ CREATE TYPE api_key_scope AS ENUM (
     'chat:read',
     'chat:update',
     'chat:delete',
-    'chat:*'
+    'chat:*',
+    'ai_seat:*',
+    'ai_seat:create',
+    'ai_seat:read'
 );
 
 CREATE TYPE app_sharing_level AS ENUM (
@@ -526,7 +529,8 @@ CREATE TYPE resource_type AS ENUM (
     'prebuilds_settings',
     'task',
     'ai_seat',
-    'chat'
+    'chat',
+    'user_secret'
 );
 
 CREATE TYPE shareable_workspace_owners AS ENUM (
@@ -1265,29 +1269,6 @@ COMMENT ON COLUMN boundary_usage_stats.denied_requests IS 'Total denied requests
 COMMENT ON COLUMN boundary_usage_stats.window_start IS 'Start of the time window for these stats, set on first flush after reset.';
 
 COMMENT ON COLUMN boundary_usage_stats.updated_at IS 'Timestamp of the last update to this row.';
-
-CREATE TABLE chat_context_boundaries (
-    id bigint NOT NULL,
-    chat_id uuid NOT NULL,
-    kind text NOT NULL,
-    after_message_id bigint,
-    summary_message_id bigint,
-    visible boolean DEFAULT true NOT NULL,
-    created_by uuid,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
-    CONSTRAINT chat_context_boundaries_check CHECK ((((kind = 'clear'::text) AND (summary_message_id IS NULL)) OR ((kind = 'compact'::text) AND (summary_message_id IS NOT NULL)))),
-    CONSTRAINT chat_context_boundaries_kind_check CHECK ((kind = ANY (ARRAY['clear'::text, 'compact'::text])))
-);
-
-CREATE SEQUENCE chat_context_boundaries_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-ALTER SEQUENCE chat_context_boundaries_id_seq OWNED BY chat_context_boundaries.id;
 
 CREATE TABLE chat_debug_runs (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -3393,8 +3374,6 @@ CREATE VIEW workspaces_expanded AS
 
 COMMENT ON VIEW workspaces_expanded IS 'Joins in the display name information such as username, avatar, and organization name.';
 
-ALTER TABLE ONLY chat_context_boundaries ALTER COLUMN id SET DEFAULT nextval('chat_context_boundaries_id_seq'::regclass);
-
 ALTER TABLE ONLY chat_messages ALTER COLUMN id SET DEFAULT nextval('chat_messages_id_seq'::regclass);
 
 ALTER TABLE ONLY chat_queued_messages ALTER COLUMN id SET DEFAULT nextval('chat_queued_messages_id_seq'::regclass);
@@ -3439,9 +3418,6 @@ ALTER TABLE ONLY audit_logs
 
 ALTER TABLE ONLY boundary_usage_stats
     ADD CONSTRAINT boundary_usage_stats_pkey PRIMARY KEY (replica_id);
-
-ALTER TABLE ONLY chat_context_boundaries
-    ADD CONSTRAINT chat_context_boundaries_pkey PRIMARY KEY (id);
 
 ALTER TABLE ONLY chat_debug_runs
     ADD CONSTRAINT chat_debug_runs_pkey PRIMARY KEY (id);
@@ -3843,12 +3819,6 @@ CREATE INDEX idx_audit_log_user_id ON audit_logs USING btree (user_id);
 
 CREATE INDEX idx_audit_logs_time_desc ON audit_logs USING btree ("time" DESC);
 
-CREATE INDEX idx_chat_context_boundaries_chat_id_id ON chat_context_boundaries USING btree (chat_id, id);
-
-CREATE INDEX idx_chat_context_boundaries_latest ON chat_context_boundaries USING btree (chat_id, id DESC);
-
-CREATE INDEX idx_chat_context_boundaries_visible ON chat_context_boundaries USING btree (chat_id, id) WHERE (visible = true);
-
 CREATE INDEX idx_chat_debug_runs_chat_started ON chat_debug_runs USING btree (chat_id, started_at DESC);
 
 CREATE UNIQUE INDEX idx_chat_debug_runs_id_chat ON chat_debug_runs USING btree (id, chat_id);
@@ -4171,15 +4141,6 @@ ALTER TABLE ONLY aibridge_interceptions
 
 ALTER TABLE ONLY api_keys
     ADD CONSTRAINT api_keys_user_id_uuid_fkey FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY chat_context_boundaries
-    ADD CONSTRAINT chat_context_boundaries_after_message_id_fkey FOREIGN KEY (after_message_id) REFERENCES chat_messages(id) ON DELETE SET NULL;
-
-ALTER TABLE ONLY chat_context_boundaries
-    ADD CONSTRAINT chat_context_boundaries_chat_id_fkey FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY chat_context_boundaries
-    ADD CONSTRAINT chat_context_boundaries_summary_message_id_fkey FOREIGN KEY (summary_message_id) REFERENCES chat_messages(id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY chat_debug_runs
     ADD CONSTRAINT chat_debug_runs_chat_id_fkey FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE;

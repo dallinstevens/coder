@@ -3376,21 +3376,6 @@ func (mr *MockStoreMockRecorder) GetLastUpdateCheck(ctx any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLastUpdateCheck", reflect.TypeOf((*MockStore)(nil).GetLastUpdateCheck), ctx)
 }
 
-// GetLatestChatContextBoundaryByChatID mocks base method.
-func (m *MockStore) GetLatestChatContextBoundaryByChatID(ctx context.Context, chatID uuid.UUID) (database.ChatContextBoundary, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetLatestChatContextBoundaryByChatID", ctx, chatID)
-	ret0, _ := ret[0].(database.ChatContextBoundary)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// GetLatestChatContextBoundaryByChatID indicates an expected call of GetLatestChatContextBoundaryByChatID.
-func (mr *MockStoreMockRecorder) GetLatestChatContextBoundaryByChatID(ctx, chatID any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLatestChatContextBoundaryByChatID", reflect.TypeOf((*MockStore)(nil).GetLatestChatContextBoundaryByChatID), ctx, chatID)
-}
-
 // GetLatestCryptoKeyByFeature mocks base method.
 func (m *MockStore) GetLatestCryptoKeyByFeature(ctx context.Context, feature database.CryptoKeyFeature) (database.CryptoKey, error) {
 	m.ctrl.T.Helper()
@@ -3614,21 +3599,6 @@ func (m *MockStore) GetMCPServerUserTokensByUserID(ctx context.Context, userID u
 func (mr *MockStoreMockRecorder) GetMCPServerUserTokensByUserID(ctx, userID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetMCPServerUserTokensByUserID", reflect.TypeOf((*MockStore)(nil).GetMCPServerUserTokensByUserID), ctx, userID)
-}
-
-// GetMaxChatMessageIDByChatID mocks base method.
-func (m *MockStore) GetMaxChatMessageIDByChatID(ctx context.Context, chatID uuid.UUID) (int64, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetMaxChatMessageIDByChatID", ctx, chatID)
-	ret0, _ := ret[0].(int64)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// GetMaxChatMessageIDByChatID indicates an expected call of GetMaxChatMessageIDByChatID.
-func (mr *MockStoreMockRecorder) GetMaxChatMessageIDByChatID(ctx, chatID any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetMaxChatMessageIDByChatID", reflect.TypeOf((*MockStore)(nil).GetMaxChatMessageIDByChatID), ctx, chatID)
 }
 
 // GetNotificationMessagesByStatus mocks base method.
@@ -5491,21 +5461,6 @@ func (mr *MockStoreMockRecorder) GetUsersByIDs(ctx, ids any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetUsersByIDs", reflect.TypeOf((*MockStore)(nil).GetUsersByIDs), ctx, ids)
 }
 
-// GetVisibleChatContextBoundariesByChatIDPaginated mocks base method.
-func (m *MockStore) GetVisibleChatContextBoundariesByChatIDPaginated(ctx context.Context, arg database.GetVisibleChatContextBoundariesByChatIDPaginatedParams) ([]database.ChatContextBoundary, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetVisibleChatContextBoundariesByChatIDPaginated", ctx, arg)
-	ret0, _ := ret[0].([]database.ChatContextBoundary)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// GetVisibleChatContextBoundariesByChatIDPaginated indicates an expected call of GetVisibleChatContextBoundariesByChatIDPaginated.
-func (mr *MockStoreMockRecorder) GetVisibleChatContextBoundariesByChatIDPaginated(ctx, arg any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetVisibleChatContextBoundariesByChatIDPaginated", reflect.TypeOf((*MockStore)(nil).GetVisibleChatContextBoundariesByChatIDPaginated), ctx, arg)
-}
-
 // GetWebpushSubscriptionsByUserID mocks base method.
 func (m *MockStore) GetWebpushSubscriptionsByUserID(ctx context.Context, userID uuid.UUID) ([]database.WebpushSubscription, error) {
 	m.ctrl.T.Helper()
@@ -6568,21 +6523,6 @@ func (m *MockStore) InsertChat(ctx context.Context, arg database.InsertChatParam
 func (mr *MockStoreMockRecorder) InsertChat(ctx, arg any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InsertChat", reflect.TypeOf((*MockStore)(nil).InsertChat), ctx, arg)
-}
-
-// InsertChatContextBoundary mocks base method.
-func (m *MockStore) InsertChatContextBoundary(ctx context.Context, arg database.InsertChatContextBoundaryParams) (database.ChatContextBoundary, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "InsertChatContextBoundary", ctx, arg)
-	ret0, _ := ret[0].(database.ChatContextBoundary)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// InsertChatContextBoundary indicates an expected call of InsertChatContextBoundary.
-func (mr *MockStoreMockRecorder) InsertChatContextBoundary(ctx, arg any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InsertChatContextBoundary", reflect.TypeOf((*MockStore)(nil).InsertChatContextBoundary), ctx, arg)
 }
 
 // InsertChatDebugRun mocks base method.

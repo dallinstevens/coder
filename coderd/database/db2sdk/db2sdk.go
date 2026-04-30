@@ -1442,18 +1442,6 @@ func jsonOrEmptyMap(rawMessage pqtype.NullRawMessage) map[string]any {
 	return m
 }
 
-func rawJSONOrEmptyMap(rawMessage json.RawMessage) map[string]any {
-	if len(rawMessage) == 0 || string(rawMessage) == "null" {
-		return map[string]any{}
-	}
-
-	var m map[string]any
-	if err := json.Unmarshal(rawMessage, &m); err != nil || m == nil {
-		return map[string]any{}
-	}
-	return m
-}
-
 func ChatMessage(m database.ChatMessage) codersdk.ChatMessage {
 	modelConfigID := &m.ModelConfigID.UUID
 	if !m.ModelConfigID.Valid {
@@ -1482,37 +1470,6 @@ func ChatMessage(m database.ChatMessage) codersdk.ChatMessage {
 		msg.Usage = usage
 	}
 	return msg
-}
-
-// ChatContextBoundary converts a database boundary to the SDK shape.
-func ChatContextBoundary(boundary database.ChatContextBoundary) codersdk.ChatContextBoundary {
-	return codersdk.ChatContextBoundary{
-		ID:               boundary.ID,
-		ChatID:           boundary.ChatID,
-		Kind:             codersdk.ChatContextBoundaryKind(boundary.Kind),
-		AfterMessageID:   nullInt64Ptr(boundary.AfterMessageID),
-		SummaryMessageID: nullInt64Ptr(boundary.SummaryMessageID),
-		Visible:          boundary.Visible,
-		CreatedBy:        nullUUIDPtr(boundary.CreatedBy),
-		CreatedAt:        boundary.CreatedAt,
-		Metadata:         rawJSONOrEmptyMap(boundary.Metadata),
-	}
-}
-
-// ChatContextBoundaries converts database boundaries to SDK shapes.
-func ChatContextBoundaries(boundaries []database.ChatContextBoundary) []codersdk.ChatContextBoundary {
-	out := make([]codersdk.ChatContextBoundary, 0, len(boundaries))
-	for _, boundary := range boundaries {
-		out = append(out, ChatContextBoundary(boundary))
-	}
-	return out
-}
-
-// ChatStreamContextBoundary converts a database boundary for streaming.
-func ChatStreamContextBoundary(boundary database.ChatContextBoundary) codersdk.ChatStreamContextBoundary {
-	return codersdk.ChatStreamContextBoundary{
-		Boundary: ChatContextBoundary(boundary),
-	}
 }
 
 // chatMessageUsage builds a ChatMessageUsage from the database row,

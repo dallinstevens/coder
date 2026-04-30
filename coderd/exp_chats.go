@@ -1748,23 +1748,10 @@ func (api *API) getChatMessages(rw http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	boundaries, err := api.Database.GetVisibleChatContextBoundariesByChatIDPaginated(ctx, database.GetVisibleChatContextBoundariesByChatIDPaginatedParams{
-		ChatID:   chatID,
-		BeforeID: 0,
-	})
-	if err != nil {
-		httpapi.Write(ctx, rw, http.StatusInternalServerError, codersdk.Response{
-			Message: "Failed to get chat context boundaries.",
-			Detail:  err.Error(),
-		})
-		return
-	}
-
 	httpapi.Write(ctx, rw, http.StatusOK, codersdk.ChatMessagesResponse{
-		Messages:          convertChatMessages(messages),
-		QueuedMessages:    convertChatQueuedMessages(queuedMessages),
-		ContextBoundaries: db2sdk.ChatContextBoundaries(boundaries),
-		HasMore:           hasMore,
+		Messages:       convertChatMessages(messages),
+		QueuedMessages: convertChatQueuedMessages(queuedMessages),
+		HasMore:        hasMore,
 	})
 }
 
@@ -2537,7 +2524,7 @@ func (api *API) postChatMessages(rw http.ResponseWriter, r *http.Request) {
 
 	switch classifyClearChatCommand(req.Content) {
 	case clearChatCommandValid:
-		_, clearErr := api.chatDaemon.ClearChatContext(ctx, chatID, apiKey.UserID)
+		clearErr := api.chatDaemon.ClearChatContext(ctx, chatID)
 		if clearErr != nil {
 			switch {
 			case xerrors.Is(clearErr, chatd.ErrChatArchived):

@@ -25,30 +25,6 @@ const makeMessage = (
 		...overrides,
 	}) as TypesGen.ChatMessage;
 
-const makeClearBoundary = (
-	afterMessageID?: number,
-	overrides: Partial<TypesGen.ChatContextBoundary> = {},
-): TypesGen.ChatContextBoundary =>
-	({
-		id: 5,
-		chat_id: "chat-1",
-		kind: "clear",
-		...(afterMessageID === undefined
-			? {}
-			: { after_message_id: afterMessageID }),
-		visible: true,
-		created_at: "2025-01-01T00:01:00Z",
-		metadata: {},
-		...overrides,
-	}) as TypesGen.ChatContextBoundary;
-
-const makeBoundaries = (
-	clearAfterMessageID?: number,
-): TypesGen.ChatContextBoundary[] =>
-	clearAfterMessageID === undefined
-		? []
-		: [makeClearBoundary(clearAfterMessageID)];
-
 const makeOption = (
 	id: string,
 	provider: string,
@@ -132,7 +108,7 @@ describe("getLatestContextUsage", () => {
 
 	it("returns null when no messages have usage data", () => {
 		const messages = [makeMessage(), makeMessage({ id: 2 })];
-		expect(getLatestContextUsage(messages, makeBoundaries())).toBeNull();
+		expect(getLatestContextUsage(messages)).toBeNull();
 	});
 
 	it("returns usage from the last message with usage data", () => {
@@ -141,7 +117,7 @@ describe("getLatestContextUsage", () => {
 			makeMessage({ id: 2 }),
 			makeMessage({ id: 3, usage: { input_tokens: 300 } }),
 		];
-		const result = getLatestContextUsage(messages, makeBoundaries());
+		const result = getLatestContextUsage(messages);
 		expect(result).not.toBeNull();
 		expect(result!.inputTokens).toBe(300);
 	});
@@ -152,28 +128,9 @@ describe("getLatestContextUsage", () => {
 			makeMessage({ id: 2, usage: { input_tokens: 200 } }),
 			makeMessage({ id: 3 }),
 		];
-		const result = getLatestContextUsage(messages, makeBoundaries());
+		const result = getLatestContextUsage(messages);
 		expect(result).not.toBeNull();
 		expect(result!.inputTokens).toBe(200);
-	});
-
-	it("returns null when the latest usage is before a clear boundary", () => {
-		const messages = [
-			makeMessage({ id: 1, usage: { input_tokens: 50 } }),
-			makeMessage({ id: 3 }),
-		];
-		const result = getLatestContextUsage(messages, makeBoundaries(2));
-		expect(result).toBeNull();
-	});
-
-	it("returns usage from messages after the latest clear boundary", () => {
-		const messages = [
-			makeMessage({ id: 1, usage: { input_tokens: 50 } }),
-			makeMessage({ id: 3, usage: { input_tokens: 300 } }),
-		];
-		const result = getLatestContextUsage(messages, makeBoundaries(2));
-		expect(result).not.toBeNull();
-		expect(result!.inputTokens).toBe(300);
 	});
 });
 
