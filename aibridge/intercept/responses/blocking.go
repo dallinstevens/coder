@@ -17,6 +17,7 @@ import (
 	"github.com/coder/coder/v2/aibridge/config"
 	aibcontext "github.com/coder/coder/v2/aibridge/context"
 	"github.com/coder/coder/v2/aibridge/intercept"
+	"github.com/coder/coder/v2/aibridge/keypool"
 	"github.com/coder/coder/v2/aibridge/mcp"
 	"github.com/coder/coder/v2/aibridge/recorder"
 	"github.com/coder/coder/v2/aibridge/tracing"
@@ -86,19 +87,61 @@ func (i *BlockingResponsesInterceptor) ProcessRequest(w http.ResponseWriter, r *
 	shouldLoop := true
 
 	for shouldLoop {
-		srv := i.newResponsesService()
-		respCopy = responseCopier{}
-
-		opts := i.requestOptions(&respCopy)
-		opts = append(opts, option.WithRequestTimeout(time.Second*600))
-
-		// TODO(ssncferreira): inject actor headers directly in the client-header
-		//   middleware instead of using SDK options.
-		if actor := aibcontext.ActorFromContext(r.Context()); actor != nil && i.cfg.SendActorHeaders {
-			opts = append(opts, intercept.ActorHeadersAsOpenAIOpts(actor)...)
+		// Per-iteration walker: each agentic-loop iteration walks
+		// the pool from the start.
+		var walker *keypool.Walker
+		if i.cfg.KeyPool != nil {
+			walker = i.cfg.KeyPool.Walker()
 		}
 
-		response, upstreamErr = i.newResponse(ctx, srv, opts)
+		// Failover sub-loop: try keys until one succeeds or the
+		// pool is exhausted. For BYOK (walker == nil) this runs
+		// exactly once.
+		for {
+			srv := i.newResponsesService()
+			respCopy = responseCopier{}
+
+			opts := i.requestOptions(&respCopy)
+			opts = append(opts, option.WithRequestTimeout(time.Second*600))
+
+			// TODO(ssncferreira): inject actor headers directly in the client-header
+			//   middleware instead of using SDK options.
+			if actor := aibcontext.ActorFromContext(r.Context()); actor != nil && i.cfg.SendActorHeaders {
+				opts = append(opts, intercept.ActorHeadersAsOpenAIOpts(actor)...)
+			}
+
+			var currentKey *keypool.Key
+			if walker != nil {
+				key, err := walker.Next()
+				if err != nil {
+					// Pool exhausted in this iteration. Send the
+					// mapped exhaustion error to the client.
+					if respErr := i.mapExhaustionError(err); respErr != nil {
+						i.writeUpstreamError(w, respErr)
+					}
+					return xerrors.Errorf("key pool exhausted: %w", err)
+				}
+				currentKey = key
+				opts = append(opts,
+					option.WithAPIKey(key.Value()),
+					// Disable SDK retries because the failover
+					// loop handles retries via key rotation.
+					option.WithMaxRetries(0),
+				)
+			}
+
+			response, upstreamErr = i.newResponse(ctx, srv, opts)
+			if upstreamErr == nil {
+				break
+			}
+			// Mark the key based on the upstream response and
+			// retry with the next key.
+			if currentKey != nil && i.markKeyOnError(ctx, currentKey, upstreamErr) {
+				continue
+			}
+			// Not a key-specific failure: stop trying.
+			break
+		}
 
 		if upstreamErr != nil || response == nil {
 			break

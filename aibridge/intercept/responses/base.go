@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -13,8 +15,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
 	"github.com/openai/openai-go/v3/responses"
+	"github.com/openai/openai-go/v3/shared"
 	"github.com/openai/openai-go/v3/shared/constant"
 	"github.com/tidwall/gjson"
 	"go.opentelemetry.io/otel/attribute"
@@ -26,6 +30,7 @@ import (
 	aibcontext "github.com/coder/coder/v2/aibridge/context"
 	"github.com/coder/coder/v2/aibridge/intercept"
 	"github.com/coder/coder/v2/aibridge/intercept/apidump"
+	"github.com/coder/coder/v2/aibridge/keypool"
 	"github.com/coder/coder/v2/aibridge/mcp"
 	"github.com/coder/coder/v2/aibridge/recorder"
 	"github.com/coder/coder/v2/aibridge/tracing"
@@ -54,7 +59,14 @@ type responsesInterceptionBase struct {
 }
 
 func (i *responsesInterceptionBase) newResponsesService() responses.ResponseService {
-	opts := []option.RequestOption{option.WithBaseURL(i.cfg.BaseURL), option.WithAPIKey(i.cfg.Key)}
+	var opts []option.RequestOption
+	// BYOK paths set auth for the single attempt. Centralized
+	// requests skip this because the failover loop sets auth
+	// per attempt.
+	if i.cfg.KeyPool == nil {
+		opts = append(opts, option.WithAPIKey(i.cfg.Key))
+	}
+	opts = append(opts, option.WithBaseURL(i.cfg.BaseURL))
 
 	// Add extra headers if configured.
 	// Some providers require additional headers that are not added by the SDK.
@@ -122,6 +134,103 @@ func (i *responsesInterceptionBase) validateRequest(ctx context.Context, w http.
 	}
 
 	return nil
+}
+
+// writeUpstreamError marshals and writes a given error.
+func (i *responsesInterceptionBase) writeUpstreamError(w http.ResponseWriter, oaiErr *responseError) {
+	if oaiErr == nil {
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	// Surface the cooldown duration to the client when set
+	// (e.g. transient key-pool exhaustion).
+	if oaiErr.RetryAfter > 0 {
+		w.Header().Set("Retry-After", strconv.Itoa(int(oaiErr.RetryAfter.Seconds())))
+	}
+	w.WriteHeader(oaiErr.StatusCode)
+
+	out, err := json.Marshal(oaiErr)
+	if err != nil {
+		i.logger.Warn(context.Background(), "failed to marshal upstream error", slog.Error(err), slog.F("error_payload", fmt.Sprintf("%+v", oaiErr)))
+		// Response has to match expected format.
+		_, _ = w.Write([]byte(`{
+	"error": {
+		"type": "error",
+		"message":"error marshaling upstream error",
+		"code": "server_error"
+	}
+}`))
+	} else {
+		_, _ = w.Write(out)
+	}
+}
+
+// For centralized requests, markKeyOnError extracts an OpenAI
+// SDK error from err and marks the key based on its status
+// code. Returns true if the status was a key-specific failover
+// trigger so callers can retry with the next key.
+func (i *responsesInterceptionBase) markKeyOnError(ctx context.Context, key *keypool.Key, err error) bool {
+	if i.cfg.KeyPool == nil {
+		return false
+	}
+	var apiErr *openai.Error
+	if !errors.As(err, &apiErr) {
+		return false
+	}
+	return intercept.MarkKeyOnStatus(
+		ctx, key, apiErr.StatusCode, apiErr.Response,
+		i.logger, i.providerName,
+	)
+}
+
+// For centralized requests, mapExhaustionError translates a
+// keypool exhaustion error into a developer-facing responseError
+// shaped for the OpenAI API. Returns nil if err is not an
+// exhaustion error.
+func (i *responsesInterceptionBase) mapExhaustionError(err error) *responseError {
+	if i.cfg.KeyPool == nil {
+		return nil
+	}
+	var transient *keypool.TransientExhaustionError
+	switch {
+	case errors.As(err, &transient):
+		return &responseError{
+			ErrorObject: &shared.ErrorObject{
+				Code:    "rate_limit_exceeded",
+				Message: "all configured keys are rate-limited",
+				Type:    "rate_limit_error",
+			},
+			StatusCode: http.StatusTooManyRequests,
+			RetryAfter: transient.RetryAfter,
+		}
+	case errors.Is(err, keypool.ErrPermanentExhaustion):
+		return &responseError{
+			ErrorObject: &shared.ErrorObject{
+				Code:    "server_error",
+				Message: "all configured keys failed authentication",
+				Type:    "api_error",
+			},
+			StatusCode: http.StatusBadGateway,
+		}
+	default:
+		return nil
+	}
+}
+
+var _ error = &responseError{}
+
+type responseError struct {
+	ErrorObject *shared.ErrorObject `json:"error"`
+	StatusCode  int                 `json:"-"`
+	RetryAfter  time.Duration       `json:"-"`
+}
+
+func (a *responseError) Error() string {
+	if a.ErrorObject == nil {
+		return ""
+	}
+	return a.ErrorObject.Message
 }
 
 // sendCustomErr sends custom responses.Error error to the client

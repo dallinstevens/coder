@@ -1,7 +1,9 @@
 package responses
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"time"
@@ -20,6 +22,7 @@ import (
 	aibcontext "github.com/coder/coder/v2/aibridge/context"
 	"github.com/coder/coder/v2/aibridge/intercept"
 	"github.com/coder/coder/v2/aibridge/intercept/eventstream"
+	"github.com/coder/coder/v2/aibridge/keypool"
 	"github.com/coder/coder/v2/aibridge/mcp"
 	"github.com/coder/coder/v2/aibridge/recorder"
 	"github.com/coder/coder/v2/aibridge/tracing"
@@ -105,39 +108,109 @@ func (i *StreamingResponsesInterceptor) ProcessRequest(w http.ResponseWriter, r 
 	shouldLoop := true
 	srv := i.newResponsesService()
 
+	// Centralized requests walk the key pool with failover. Each
+	// agentic-loop iteration gets a fresh walker so it can fail
+	// over independently of the initial client request.
+	// BYOK requests run as a single attempt.
+	// TODO(ssncferreira): update the interception's credential
+	// hint with the actually-used key (the successful stream's
+	// key on success, the last tried key on failure) in the
+	// upstack PR.
+
 	for shouldLoop {
 		shouldLoop = false
 
-		respCopy = responseCopier{}
-		opts := i.requestOptions(&respCopy)
-
-		// TODO(ssncferreira): inject actor headers directly in the client-header
-		//   middleware instead of using SDK options.
-		if actor := aibcontext.ActorFromContext(r.Context()); actor != nil && i.cfg.SendActorHeaders {
-			opts = append(opts, intercept.ActorHeadersAsOpenAIOpts(actor)...)
+		// Per-iteration walker: each agentic-loop iteration
+		// walks the pool from the start.
+		var walker *keypool.Walker
+		if i.cfg.KeyPool != nil {
+			walker = i.cfg.KeyPool.Walker()
 		}
-		stream := i.newStream(ctx, srv, opts)
+
+		// Failover sub-loop: try keys until a stream starts
+		// successfully or we hit a non-recoverable error.
+		var stream *ssestream.Stream[responses.ResponseStreamEventUnion]
+		var startErr error
+	failover:
+		for {
+			respCopy = responseCopier{}
+			opts := i.requestOptions(&respCopy)
+
+			// TODO(ssncferreira): inject actor headers directly in the client-header
+			//   middleware instead of using SDK options.
+			if actor := aibcontext.ActorFromContext(r.Context()); actor != nil && i.cfg.SendActorHeaders {
+				opts = append(opts, intercept.ActorHeadersAsOpenAIOpts(actor)...)
+			}
+
+			var currentKey *keypool.Key
+			if walker != nil {
+				key, err := walker.Next()
+				if err != nil {
+					// Pool exhausted in this iteration. Relay
+					// the error to the client: as an SSE event
+					// if events have already been sent, or by
+					// direct write otherwise.
+					if respErr := i.mapExhaustionError(err); respErr != nil {
+						if events.IsStreaming() {
+							payload, mErr := i.marshalErrEvent(respErr)
+							if mErr != nil {
+								i.logger.Warn(ctx, "failed to marshal exhaustion error", slog.Error(mErr))
+							} else if sErr := events.Send(ctx, payload); sErr != nil {
+								i.logger.Warn(ctx, "failed to relay exhaustion error", slog.Error(sErr))
+							}
+						} else {
+							i.writeUpstreamError(w, respErr)
+						}
+					}
+					return xerrors.Errorf("key pool exhausted: %w", err)
+				}
+				currentKey = key
+				opts = append(opts,
+					option.WithAPIKey(key.Value()),
+					// Disable SDK retries because the failover
+					// loop handles retries via key rotation.
+					option.WithMaxRetries(0),
+				)
+			}
+
+			stream = i.newStream(ctx, srv, opts)
+			if upstreamErr := stream.Err(); upstreamErr != nil {
+				// Pre-stream failure of this attempt. For
+				// centralized requests, mark the key and
+				// retry with the next one.
+				if currentKey != nil && i.markKeyOnError(ctx, currentKey, upstreamErr) {
+					stream.Close()
+					continue failover
+				}
+				// Non-key error: stop trying and let the
+				// existing handling below report it.
+				startErr = upstreamErr
+				break failover
+			}
+			// Stream started successfully: commit to this key.
+			break failover
+		}
 
 		// func scope to defer steam.Close()
 		err := func() error {
 			defer stream.Close()
 
-			if upstreamErr := stream.Err(); upstreamErr != nil {
+			if startErr != nil {
 				// events stream should never be initialized
 				if events.IsStreaming() {
 					i.logger.Warn(ctx, "event stream was initialized when no response was received from upstream")
-					return upstreamErr
+					return startErr
 				}
 
 				// no response received from upstream (eg. client/connection error), return custom error
 				if !respCopy.responseReceived.Load() {
-					i.sendCustomErr(ctx, w, http.StatusInternalServerError, upstreamErr)
-					return upstreamErr
+					i.sendCustomErr(ctx, w, http.StatusInternalServerError, startErr)
+					return startErr
 				}
 
 				// forward received response as-is
 				err := respCopy.forwardResp(w)
-				return errors.Join(upstreamErr, err)
+				return errors.Join(startErr, err)
 			}
 
 			for stream.Next() {
@@ -218,4 +291,20 @@ func (i *StreamingResponsesInterceptor) newStream(ctx context.Context, srv respo
 
 	// The body is overridden by option.WithRequestBody(reqPayload) in requestOptions
 	return srv.NewStreaming(ctx, responses.ResponseNewParams{}, opts...)
+}
+
+// marshalErrEvent encodes a responseError as an SSE event for
+// injection into an open stream when failover is no longer
+// possible (e.g. pool exhaustion mid-iteration).
+func (*StreamingResponsesInterceptor) marshalErrEvent(respErr *responseError) ([]byte, error) {
+	data, err := json.Marshal(respErr)
+	if err != nil {
+		return nil, xerrors.Errorf("marshal error: %w", err)
+	}
+	var buf bytes.Buffer
+	_, _ = buf.WriteString("event: error\n")
+	_, _ = buf.WriteString("data: ")
+	_, _ = buf.Write(data)
+	_, _ = buf.WriteString("\n\n")
+	return buf.Bytes(), nil
 }
