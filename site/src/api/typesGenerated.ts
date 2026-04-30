@@ -2399,11 +2399,11 @@ export interface ChatTextPart {
 
 // From codersdk/chats.go
 /**
- * ChatTitleGenerationModelConfigResponse is the response body for the chat
- * title generation model configuration endpoint.
+ * ChatTitleGenerationModelOverrideResponse is the response body for the chat
+ * title generation model override endpoint.
  */
-export interface ChatTitleGenerationModelConfigResponse {
-	readonly model_config_id?: string;
+export interface ChatTitleGenerationModelOverrideResponse {
+	readonly model_config_id: string;
 	readonly is_malformed: boolean;
 }
 
@@ -7825,10 +7825,10 @@ export interface UpdateChatSystemPromptRequest {
 
 // From codersdk/chats.go
 /**
- * UpdateChatTitleGenerationModelConfigRequest is the request body for updating
- * the chat title generation model configuration endpoint.
+ * UpdateChatTitleGenerationModelOverrideRequest is the request body for updating
+ * the chat title generation model override endpoint.
  */
-export interface UpdateChatTitleGenerationModelConfigRequest {
+export interface UpdateChatTitleGenerationModelOverrideRequest {
 	readonly model_config_id: string;
 }
 
