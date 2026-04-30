@@ -143,6 +143,9 @@ const getOfferedModes = (
 		: ["deployment_default", "chat_default", "model"];
 };
 
+const selectorTriggerClassName =
+	"h-10 w-full justify-between rounded-md border border-border border-solid bg-transparent px-3 text-sm shadow-sm md:w-[18rem]";
+
 export const PersonalModelOverrideRow: FC<PersonalModelOverrideRowProps> = ({
 	context,
 	title,
@@ -204,7 +207,10 @@ export const PersonalModelOverrideRow: FC<PersonalModelOverrideRowProps> = ({
 					}}
 					disabled={isFormDisabled}
 				>
-					<SelectTrigger aria-label={`${title} behavior`}>
+					<SelectTrigger
+						aria-label={`${title} behavior`}
+						className={selectorTriggerClassName}
+					>
 						<SelectValue placeholder="Select behavior" />
 					</SelectTrigger>
 					<SelectContent className="min-w-[18rem]">
@@ -232,7 +238,7 @@ export const PersonalModelOverrideRow: FC<PersonalModelOverrideRowProps> = ({
 						emptyMessage={
 							isLoading ? "Loading models..." : "No enabled models found."
 						}
-						className="h-10 w-full justify-between rounded-md border border-border border-solid bg-transparent px-3 text-sm shadow-sm"
+						className={selectorTriggerClassName}
 						contentClassName="min-w-[18rem]"
 					/>
 				)}
