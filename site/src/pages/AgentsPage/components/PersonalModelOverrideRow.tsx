@@ -111,30 +111,6 @@ const getUnavailableModelLabel = (
 	return `Unavailable: ${getModelConfigLabel(modelConfig)}`;
 };
 
-const getSelectionHelp = (
-	context: PersonalOverrideContext,
-	mode: PersonalOverrideMode,
-): string => {
-	if (mode === "model") {
-		return "Uses the selected model for this context.";
-	}
-	if (mode === "deployment_default") {
-		if (context === "root") {
-			return "Not supported for root agents.";
-		}
-		return context === "explore"
-			? "Uses the admin-defined Explore deployment default."
-			: "Uses the admin-defined General deployment default.";
-	}
-	if (context === "root") {
-		return "Uses the deployment's default model.";
-	}
-	if (context === "explore") {
-		return "Uses the current turn's model.";
-	}
-	return "Uses the chat's current model.";
-};
-
 const getOfferedModes = (
 	context: PersonalOverrideContext,
 ): readonly PersonalOverrideMode[] => {
@@ -177,7 +153,6 @@ export const PersonalModelOverrideRow: FC<PersonalModelOverrideRowProps> = ({
 		isMalformedOverride,
 	});
 	const offeredModes = getOfferedModes(context);
-	const selectionHelp = getSelectionHelp(context, form.values.mode);
 	const isInvalidRootDeploymentDefault =
 		context === "root" && overrideData?.mode === "deployment_default";
 	const isUnavailableSavedModel =
@@ -242,7 +217,6 @@ export const PersonalModelOverrideRow: FC<PersonalModelOverrideRowProps> = ({
 						contentClassName="min-w-[18rem]"
 					/>
 				)}
-				<p className="m-0 text-xs text-content-secondary">{selectionHelp}</p>
 				<ModelOverrideAlerts
 					isUnavailableSavedModel={isUnavailableSavedModel}
 					unavailableMessage="The saved model is unavailable and will be ignored until you choose a valid model override."

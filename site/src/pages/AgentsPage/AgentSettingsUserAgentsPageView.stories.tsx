@@ -580,7 +580,6 @@ export const InvalidRootDeploymentDefault: Story = {
 				/The saved root override uses the deployment default/i,
 			),
 		).toBeInTheDocument();
-		expect(rootSection).toHaveTextContent("Not supported for root agents.");
 		expect(
 			within(rootSection).getByRole("button", { name: "Save" }),
 		).toBeDisabled();
