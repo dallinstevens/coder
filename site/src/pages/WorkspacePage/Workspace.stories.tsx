@@ -236,6 +236,7 @@ export const AppIcons: Story = {
 						agents: [
 							{
 								...Mocks.MockWorkspaceAgent,
+								lifecycle_state: "ready",
 								apps: [
 									{
 										...Mocks.MockWorkspaceApp,
@@ -263,7 +264,23 @@ export const AppIcons: Story = {
 export const Favorite: Story = {
 	args: {
 		...Running.args,
-		workspace: Mocks.MockFavoriteWorkspace,
+		workspace: {
+			...Mocks.MockFavoriteWorkspace,
+			latest_build: {
+				...Mocks.MockFavoriteWorkspace.latest_build,
+				resources: [
+					{
+						...Mocks.MockWorkspaceResource,
+						agents: [
+							{
+								...Mocks.MockWorkspaceAgent,
+								lifecycle_state: "ready",
+							},
+						],
+					},
+				],
+			},
+		},
 	},
 };
 
@@ -339,14 +356,46 @@ export const Starting: Story = {
 export const Stopped: Story = {
 	args: {
 		...Running.args,
-		workspace: Mocks.MockStoppedWorkspace,
+		workspace: {
+			...Mocks.MockStoppedWorkspace,
+			latest_build: {
+				...Mocks.MockStoppedWorkspace.latest_build,
+				resources: [
+					{
+						...Mocks.MockWorkspaceResource,
+						agents: [
+							{
+								...Mocks.MockWorkspaceAgent,
+								lifecycle_state: "off",
+							},
+						],
+					},
+				],
+			},
+		},
 	},
 };
 
 export const Stopping: Story = {
 	args: {
 		...Running.args,
-		workspace: Mocks.MockStoppingWorkspace,
+		workspace: {
+			...Mocks.MockStoppingWorkspace,
+			latest_build: {
+				...Mocks.MockStoppingWorkspace.latest_build,
+				resources: [
+					{
+						...Mocks.MockWorkspaceResource,
+						agents: [
+							{
+								...Mocks.MockWorkspaceAgent,
+								lifecycle_state: "shutting_down",
+							},
+						],
+					},
+				],
+			},
+		},
 	},
 };
 
@@ -374,6 +423,17 @@ export const FailedWithLogs: Story = {
 			...Mocks.MockFailedWorkspace,
 			latest_build: {
 				...Mocks.MockFailedWorkspace.latest_build,
+				resources: [
+					{
+						...Mocks.MockWorkspaceResource,
+						agents: [
+							{
+								...Mocks.MockWorkspaceAgent,
+								lifecycle_state: "off",
+							},
+						],
+					},
+				],
 				job: {
 					...Mocks.MockFailedWorkspace.latest_build.job,
 					error:
@@ -392,6 +452,17 @@ export const FailedWithRetry: Story = {
 			...Mocks.MockFailedWorkspace,
 			latest_build: {
 				...Mocks.MockFailedWorkspace.latest_build,
+				resources: [
+					{
+						...Mocks.MockWorkspaceResource,
+						agents: [
+							{
+								...Mocks.MockWorkspaceAgent,
+								lifecycle_state: "off",
+							},
+						],
+					},
+				],
 				job: {
 					...Mocks.MockFailedWorkspace.latest_build.job,
 					error:
@@ -406,28 +477,92 @@ export const FailedWithRetry: Story = {
 export const Deleting: Story = {
 	args: {
 		...Running.args,
-		workspace: Mocks.MockDeletingWorkspace,
+		workspace: {
+			...Mocks.MockDeletingWorkspace,
+			latest_build: {
+				...Mocks.MockDeletingWorkspace.latest_build,
+				resources: [
+					{
+						...Mocks.MockWorkspaceResource,
+						agents: [
+							{
+								...Mocks.MockWorkspaceAgent,
+								lifecycle_state: "off",
+							},
+						],
+					},
+				],
+			},
+		},
 	},
 };
 
 export const Deleted: Story = {
 	args: {
 		...Running.args,
-		workspace: Mocks.MockDeletedWorkspace,
+		workspace: {
+			...Mocks.MockDeletedWorkspace,
+			latest_build: {
+				...Mocks.MockDeletedWorkspace.latest_build,
+				resources: [
+					{
+						...Mocks.MockWorkspaceResource,
+						agents: [
+							{
+								...Mocks.MockWorkspaceAgent,
+								lifecycle_state: "off",
+							},
+						],
+					},
+				],
+			},
+		},
 	},
 };
 
 export const Canceling: Story = {
 	args: {
 		...Running.args,
-		workspace: Mocks.MockCancelingWorkspace,
+		workspace: {
+			...Mocks.MockCancelingWorkspace,
+			latest_build: {
+				...Mocks.MockCancelingWorkspace.latest_build,
+				resources: [
+					{
+						...Mocks.MockWorkspaceResource,
+						agents: [
+							{
+								...Mocks.MockWorkspaceAgent,
+								lifecycle_state: "off",
+							},
+						],
+					},
+				],
+			},
+		},
 	},
 };
 
 export const Canceled: Story = {
 	args: {
 		...Running.args,
-		workspace: Mocks.MockCanceledWorkspace,
+		workspace: {
+			...Mocks.MockCanceledWorkspace,
+			latest_build: {
+				...Mocks.MockCanceledWorkspace.latest_build,
+				resources: [
+					{
+						...Mocks.MockWorkspaceResource,
+						agents: [
+							{
+								...Mocks.MockWorkspaceAgent,
+								lifecycle_state: "off",
+							},
+						],
+					},
+				],
+			},
+		},
 	},
 };
 
